@@ -996,21 +996,7 @@ desenhar:
  lea edi,[pixels+edi*4]
  add edi,[margem_mapa]
  mov ebx,[indice]
- mov al,[mapa+ebx]
- cmp al,'T'
- jne .tema
- cmp ebx,[homem]
- jne .armadilha_patife
- test dword [presos],1
- jnz .armadilha_ocupada
-.armadilha_patife:
- cmp ebx,[mulher]
- jne .tema
- test dword [presos],2
- jz .tema
-.armadilha_ocupada:
- mov al,'.'                 ; o quadro do personagem ja contem a algema
-.tema:
+ call tile_visivel
  cmp dword [fase],2
  je .praia
  cmp dword [fase],1
@@ -1051,18 +1037,11 @@ desenhar:
  mov esi,vitrine_vazia
  jmp .bloco_bgra
 .algema:
- mov esi,algema_esquerda
- mov ecx,algema_direita
- mov eax,ebx
- xor edx,edx
- push ecx
- mov ecx,COLS
- div ecx
- pop ecx
- cmp edx,9
- jb .bloco_bgra
- mov esi,ecx
- jmp .bloco_bgra
+ cmp dword [estado],0
+ je .proxima_casa
+ mov esi,algema_detalhada
+ call desenhar_bloco32_reduzido
+ jmp .proxima_casa
 .grade_mapa:
  test dword [chaves],1
  jnz .proxima_casa
@@ -1086,7 +1065,7 @@ desenhar:
  jmp .proxima_casa
 .parede:
  call selecionar_parede
- call desenhar_parede_reduzida
+ call desenhar_bloco32_reduzido
  jmp .proxima_casa
 .bloco_bgra:
  call desenhar_bgra
@@ -1098,6 +1077,8 @@ desenhar:
  je .parede_museu
  mov esi,piso_museu
  call desenhar_tile_museu
+ cmp al,'T'
+ je .algema
  cmp al,'D'
  je .diamante_no_museu
  cmp al,'b'
@@ -1170,7 +1151,7 @@ desenhar:
  jmp .bloco_bgra
 .parede_museu:
  call selecionar_parede
- call desenhar_parede_reduzida
+ call desenhar_bloco32_reduzido
  jmp .proxima_casa
 .tile_museu:
  call desenhar_tile_museu
@@ -1181,6 +1162,8 @@ desenhar:
  je .tile_praia
  mov esi,piso_praia
  call desenhar_tile_praia
+ cmp al,'T'
+ je .algema
  cmp al,'D'
  je .diamante_na_praia
  cmp al,'b'
@@ -1323,7 +1306,7 @@ desenhar:
  call posicionar_ator
  call converter_posicao_tela
  call selecionar_parede
- call desenhar_parede_detalhada
+ call desenhar_bloco32_detalhado
 .avancar_parede:
  inc ebx
  cmp ebx,COLS*ROWS
@@ -1347,6 +1330,7 @@ desenhar:
  cmp dword [estado],0
  jne .enviar_imagem
  call desenhar_porta_tela
+ call desenhar_algemas_tela
  call desenhar_atores_tela
 .enviar_imagem:
  pcall SetDIBitsToDevice,[dc],0,0,WIDTH*2,HEIGHT*2,0,0,0,HEIGHT*2,pixels_tela,bmi,0
@@ -1850,6 +1834,43 @@ interpolar_casa:
  pop eax
  ret
 
+; EBX = casa. Uma algema ocupada ja faz parte do sprite do personagem.
+tile_visivel:
+ mov al,[mapa+ebx]
+ cmp al,'T'
+ jne .fim
+ cmp ebx,[homem]
+ jne .patife
+ test dword [presos],1
+ jnz .ocupada
+.patife:
+ cmp ebx,[mulher]
+ jne .fim
+ test dword [presos],2
+ jz .fim
+.ocupada:
+ mov al,'.'
+.fim:
+ ret
+
+desenhar_algemas_tela:
+ pushad
+ xor ebx,ebx
+.casa:
+ call tile_visivel
+ cmp al,'T'
+ jne .proxima
+ call posicionar_ator
+ call converter_posicao_tela
+ mov esi,algema_detalhada
+ call desenhar_bloco32_detalhado
+.proxima:
+ inc ebx
+ cmp ebx,[tamanho_mapa]
+ jb .casa
+ popad
+ ret
+
 desenhar_atores_tela:
  pushad
  mov ebp,pos_guarda
@@ -2019,10 +2040,10 @@ selecionar_parede:
  add esi,eax
  ret
 
-desenhar_parede_reduzida:
+desenhar_bloco32_reduzido:
  desenhar_ator_bgra 16,WIDTH,2
 
-desenhar_parede_detalhada:
+desenhar_bloco32_detalhado:
  desenhar_ator_bgra 32,WIDTH*2,1
 
 desenhar_ator_reduzido:
@@ -2235,8 +2256,6 @@ figuras_museu:
  dd cordao_museu
  db 'f'
  dd vitrine_museu
- db 'T'
- dd algema_museu
  db 'E'
  dd porta_museu
  db 0
@@ -2250,8 +2269,6 @@ figuras_praia:
  dd castelo_praia
  db 'f'
  dd caixote_praia
- db 'T'
- dd algema_museu
  db 'E'
  dd porta_museu
  db 0
@@ -2278,8 +2295,7 @@ porta_azul_aberta: incbin "assets/porta_azul_aberta.bgra"
 porta_azul_fechada_detalhada: incbin "assets/porta_azul_fechada_detalhado.bgra"
 porta_azul_aberta_detalhada: incbin "assets/porta_azul_aberta_detalhado.bgra"
 pedra_diamante: incbin "assets/pedra_diamante.bgra"
-algema_esquerda: incbin "assets/algema_esquerda.bgra"
-algema_direita: incbin "assets/algema_direita.bgra"
+algema_detalhada: incbin "assets/algema_detalhada.bgra"
 piso_esquerdo: incbin "assets/piso_esquerdo.bgra"
 piso_direito: incbin "assets/piso_direito.bgra"
 policial: incbin "assets/policial_animacoes.bgra"
