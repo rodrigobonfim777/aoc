@@ -69,7 +69,7 @@ As duas exposições usam também sprites detalhados de 64 × 64 pixels, derivad
 
 As exposições do Pensador (linhas 10–11, colunas 4–5) e da mesa (linhas 3–4, colunas 15–16), contando a partir de zero, ocupam 2 × 2 blocos sólidos no Museu. São extraídas diretamente das referências anexadas, com proporção preservada, por `python3 tools/gerar_exposicoes_museu.py` (Pillow). Paredes, algemas, cordões e alavanca da fase 2 seguem `assets/museu-layout-referencia.png`. As outras fases permanecem iguais.
 
-A porta azul das três fases usa as referências `assets/porta_azul_fechada_referencia.png` e `assets/porta_azul_aberta_referencia.png`. `python3 tools/gerar_portas.py` gera os estados fechado/aberto, preservando proporção e tamanho de um bloco, com versão detalhada na resolução final da janela. A abertura continua controlada pela alavanca B.
+A porta azul das três fases usa as referências `assets/porta_azul_fechada_referencia.png` e `assets/porta_azul_aberta_referencia.png`. `python3 tools/gerar_portas.py` gera os estados fechado/aberto, ajustados à largura e à altura do bloco da saída (32 × 32 pixels na janela). A abertura continua controlada pela alavanca B.
 
 A pasta `assets` mantém os sprites atuais, suas prévias PNG e as referências usadas pelos geradores ou pela documentação do mapa. Versões antigas substituídas foram removidas; os geradores não recriam esses arquivos obsoletos.
 

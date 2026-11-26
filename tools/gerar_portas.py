@@ -1,4 +1,4 @@
-"""Extrai as portas fornecidas, preservando proporcoes, em 16x16 e 32x32."""
+"""Ajusta a largura e a altura das portas fornecidas ao quadrado da saida."""
 
 from collections import deque
 from pathlib import Path
@@ -54,10 +54,7 @@ for name, box in BOXES.items():
         cleaned.putpixel(point, image.getpixel(point))
     cleaned = cleaned.crop(cleaned.getbbox())
     for size, suffix in ((16, ""), (32, "_detalhado")):
-        scaled = cleaned.copy()
-        scaled.thumbnail((size, size), Image.Resampling.LANCZOS)
-        tile = Image.new("RGBA", (size, size))
-        tile.paste(scaled, ((size - scaled.width) // 2, size - scaled.height))
+        tile = cleaned.resize((size, size), Image.Resampling.LANCZOS)
         # O renderizador atual aceita BGRA opaco ou zero, sem mistura de alfa.
         tile.putdata([(*p[:3], 255) if p[3] >= 128 else (0, 0, 0, 0) for p in tile.getdata()])
         tile.save(ROOT / f"assets/{name}{suffix}.png")

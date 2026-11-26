@@ -1039,14 +1039,7 @@ desenhar:
  je .alavanca_a
  cmp al,'b'
  je .alavanca_b
- cmp al,'E'
- jne .proxima_casa
-.porta_azul:
- mov esi,porta_azul_fechada
- test dword [chaves],2
- jz .bloco_bgra
- mov esi,porta_azul_aberta
- jmp .bloco_bgra
+ jmp .proxima_casa
 .diamante:
  mov esi,pedra_diamante
  call desenhar_bgra
@@ -1092,14 +1085,9 @@ desenhar:
  call desenhar_tile_icone
  jmp .proxima_casa
 .parede:
- mov eax,ebx
- xor edx,edx
- mov ecx,COLS
- div ecx
- mov esi,parede
- cmp edx,9
- jne .bloco_bgra
- mov esi,parede_central
+ call selecionar_parede
+ call desenhar_parede_reduzida
+ jmp .proxima_casa
 .bloco_bgra:
  call desenhar_bgra
  jmp .proxima_casa
@@ -1144,7 +1132,7 @@ desenhar:
  mov esi,[esi+1]
  cmp al,'E'
  jne .tile_museu
- jmp .porta_azul
+ jmp .proxima_casa
 .dinossauro_museu:
  mov esi,dinossauro_museu
  cmp al,'s'
@@ -1181,8 +1169,8 @@ desenhar:
  mov esi,diamante_roxo
  jmp .bloco_bgra
 .parede_museu:
- call selecionar_parede_museu
- call desenhar_parede_museu_reduzida
+ call selecionar_parede
+ call desenhar_parede_reduzida
  jmp .proxima_casa
 .tile_museu:
  call desenhar_tile_museu
@@ -1209,7 +1197,7 @@ desenhar:
  mov esi,[esi+1]
  cmp al,'E'
  jne .tile_praia
- jmp .porta_azul
+ jmp .proxima_casa
 .diamante_na_praia:
  mov esi,pedestal_praia
  call desenhar_tile_praia
@@ -1228,6 +1216,7 @@ desenhar:
  ; compoe a versao reduzida primeiro para respeitar o escurecimento.
  cmp dword [estado],0
  je .imagem_pronta
+ call desenhar_porta_reduzida
  mov dword [indice],0
 .pessoas:
  mov eax,[indice]
@@ -1318,26 +1307,30 @@ desenhar:
  dec edx
  jnz .ampliar_linha
  ; Exposicoes usam a resolucao final, sem ampliar o sprite reduzido de 32x32.
- cmp dword [fase],1
- jne .exibir_imagem
+ cmp dword [fase],2
+ je .exibir_imagem
  cmp dword [estado],0
  jne .exposicoes_museu
  xor ebx,ebx
 .paredes_detalhadas:
  cmp byte [mapa+ebx],'#'
  je .pintar_parede
+ cmp dword [fase],1
+ jne .avancar_parede
  cmp ebx,5*COLS              ; coluna com o vaso
  jne .avancar_parede
 .pintar_parede:
  call posicionar_ator
  call converter_posicao_tela
- call selecionar_parede_museu
- call desenhar_parede_museu_detalhada
+ call selecionar_parede
+ call desenhar_parede_detalhada
 .avancar_parede:
  inc ebx
  cmp ebx,COLS*ROWS
  jb .paredes_detalhadas
 .exposicoes_museu:
+ cmp dword [fase],1
+ jne .exibir_imagem
  mov esi,dinossauro_museu_detalhado
  mov edi,pixels_tela+((1+1)*16*2*WIDTH*2+1*16*2)*4
  call desenhar_exposicao_detalhada
@@ -1351,9 +1344,9 @@ desenhar:
  mov edi,pixels_tela+((3+1)*16*2*WIDTH*2+15*16*2)*4
  call desenhar_nova_exposicao_museu
 .exibir_imagem:
- call desenhar_porta_tela
  cmp dword [estado],0
  jne .enviar_imagem
+ call desenhar_porta_tela
  call desenhar_atores_tela
 .enviar_imagem:
  pcall SetDIBitsToDevice,[dc],0,0,WIDTH*2,HEIGHT*2,0,0,0,HEIGHT*2,pixels_tela,bmi,0
@@ -1984,8 +1977,13 @@ converter_posicao_tela:
  ret
 %endmacro
 
-; EBX = casa do Museu. ESI recebe o recorte correspondente da referencia.
-selecionar_parede_museu:
+; EBX = casa da Cadeia ou do Museu. ESI recebe o recorte da parede.
+selecionar_parede:
+ mov esi,paredes_museu
+ cmp dword [fase],0
+ jne .coordenadas
+ mov esi,paredes_cadeia
+.coordenadas:
  mov eax,ebx
  xor edx,edx
  mov ecx,COLS
@@ -1999,6 +1997,11 @@ selecionar_parede_museu:
  cmp edx,COLS-1
  je .direita
  mov eax,2*COLS+2*(ROWS-2)
+ cmp esi,paredes_cadeia
+ jne .quadro
+ cmp edx,COLS/2
+ jne .quadro
+ inc eax                    ; divisoria metalica central
  jmp .quadro
 .topo:
  mov eax,edx
@@ -2013,13 +2016,13 @@ selecionar_parede_museu:
  add eax,2*COLS+ROWS-3
 .quadro:
  shl eax,12                 ; 32 x 32 pixels BGRA
- lea esi,[paredes_museu+eax]
+ add esi,eax
  ret
 
-desenhar_parede_museu_reduzida:
+desenhar_parede_reduzida:
  desenhar_ator_bgra 16,WIDTH,2
 
-desenhar_parede_museu_detalhada:
+desenhar_parede_detalhada:
  desenhar_ator_bgra 32,WIDTH*2,1
 
 desenhar_ator_reduzido:
@@ -2028,48 +2031,42 @@ desenhar_ator_reduzido:
 desenhar_ator_detalhado:
  desenhar_ator_ampliado TAMANHO_ATOR_TELA,WIDTH*2,32
 
-; Porta de um bloco, desenhada na resolucao final sem ampliar o sprite 16x16.
-desenhar_porta_tela:
+; A porta ocupa o quadrado da saida nas duas resolucoes.
+%macro pintar_porta 4
  pushad
- mov eax,[pos_porta]
- xor edx,edx
- mov ecx,COLS
- div ecx
- inc eax
- imul eax,WIDTH*16*4
- shl edx,5
- add eax,edx
- shl eax,2
- mov edx,[margem_mapa]
- shl edx,2
- add eax,edx
- lea edi,[pixels_tela+eax]
- mov esi,porta_azul_fechada_detalhada
+ mov ebx,[pos_porta]
+ call posicionar_ator
+ %if %1 == 32
+ call converter_posicao_tela
+ %endif
+ mov esi,%3
  test dword [chaves],2
- jz .desenhar
- mov esi,porta_azul_aberta_detalhada
-.desenhar:
- mov edx,32
-.linha:
- mov ecx,32
-.pixel:
+ jz %%desenhar
+ mov esi,%4
+%%desenhar:
+ mov edx,%1
+%%linha:
+ mov ecx,%1
+%%pixel:
  lodsd
  test eax,0xff000000
- jz .proximo
- cmp dword [estado],0
- je .gravar
- and eax,0x00fefefe
- shr eax,1
-.gravar:
+ jz %%proximo
  mov [edi],eax
-.proximo:
+%%proximo:
  add edi,4
- loop .pixel
- add edi,(WIDTH*2-32)*4
+ loop %%pixel
+ add edi,(%2-%1)*4
  dec edx
- jnz .linha
+ jnz %%linha
  popad
  ret
+%endmacro
+
+desenhar_porta_reduzida:
+ pintar_porta 16,WIDTH,porta_azul_fechada,porta_azul_aberta
+
+desenhar_porta_tela:
+ pintar_porta 32,WIDTH*2,porta_azul_fechada_detalhada,porta_azul_aberta_detalhada
 
 ; Novas figuras transparentes de 64x64; respeitam o painel de pausa/fim.
 desenhar_nova_exposicao_museu:
@@ -2263,8 +2260,7 @@ align 4
 pilantra: incbin "assets/pilantra_animacoes.bgra"
 patife: incbin "assets/patife_animacoes.bgra"
 paredes_museu: incbin "assets/paredes_museu.bgra"
-parede: incbin "assets/parede.bgra"
-parede_central: incbin "assets/parede_central.bgra"
+paredes_cadeia: incbin "assets/paredes_cadeia.bgra"
 diamante_azul: incbin "assets/diamante_azul.bgra"
 diamante_roxo: incbin "assets/diamante_roxo.bgra"
 diamante_verde: incbin "assets/diamante_verde.bgra"
