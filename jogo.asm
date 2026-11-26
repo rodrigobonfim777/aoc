@@ -33,6 +33,20 @@
  je %2
  cmp %1,'s'
  je %2
+ cmp %1,'1'
+ je %2
+ cmp %1,'2'
+ je %2
+ cmp %1,'3'
+ je %2
+ cmp %1,'4'
+ je %2
+ cmp %1,'5'
+ je %2
+ cmp %1,'6'
+ je %2
+ cmp %1,'7'
+ je %2
  cmp %1,'p'
  je %2
  cmp %1,'v'
@@ -69,11 +83,11 @@ mapa_inicial:
  db '#H.....#.E.......M#'
  db '###################'
 
-; Museu: s = fossil, p = quadro, v = vaso, c = cordao, f = vitrine.
+; Museu: s123 = fossil 2x2, 4567 = esfinge 2x2; p quadro, v vaso, c cordao.
 mapa_museu:
  db '###################'
- db '#s.......D........#'
- db '#c.....#.#......Tp#'
+ db '#s1......D........#'
+ db '#23....#.#......Tp#'
  db '#..#c#.#.#.#c#.#..#'
  db '#..###.#.#.###.#.##'
  db 'v....#T..#V.......#'
@@ -82,8 +96,9 @@ mapa_museu:
  db '#..#########.###..#'
  db '#.T......#....T...#'
  db '#.######.#.#.#.#..#'
- db '#....c...#.###.#..#'
- db '#p.H.....E.....M.f#'
+ db '#........#........#'
+ db '#....c...#.###.#45#'
+ db '#p.H.....E.....M67#'
  db '###################'
 
 ; Praia: u = palmeira, q = pranchas, k = castelo de areia, f = caixote.
@@ -107,7 +122,7 @@ mapa_praia:
 ; Mapa, posicoes de Pilantra/Patife/guarda, tamanho, porta, chaves e margem vertical.
 fases:
  dd mapa_inicial,LEFT_START,RIGHT_START,GUARDA_INICIO,15*COLS,13*COLS+9,3,0
- dd mapa_museu,12*COLS+3,12*COLS+15,5*COLS+10,14*COLS,12*COLS+9,2,8*WIDTH*4
+ dd mapa_museu,13*COLS+3,13*COLS+15,5*COLS+10,15*COLS,13*COLS+9,2,0
  dd mapa_praia,LEFT_START,RIGHT_START,4*COLS+4,15*COLS,13*COLS+9,2,0
 fase dd 0                  ; 0 cadeia, 1 museu, 2 praia
 tamanho_mapa dd 0
@@ -974,12 +989,14 @@ desenhar:
  mov esi,porta_aberta
  jmp .bloco_bgra
 .diamante:
- cmp dword [diamante_coletado],0
- je .diamante_visivel
  mov esi,pedra_diamante
+ call desenhar_bgra
+ cmp dword [diamante_coletado],0
+ jne .vitrine_vazia
+ mov esi,diamante_azul
  jmp .bloco_bgra
-.diamante_visivel:
- mov esi,diamante_pedra
+.vitrine_vazia:
+ mov esi,vitrine_vazia
  jmp .bloco_bgra
 .algema:
  mov esi,algema_esquerda
@@ -1038,6 +1055,15 @@ desenhar:
  je .diamante_no_museu
  cmp al,'b'
  je .alavanca_b
+ cmp al,'s'
+ je .dinossauro_museu
+ cmp al,'1'
+ jb .figuras_museu
+ cmp al,'3'
+ jbe .dinossauro_museu
+ cmp al,'7'
+ jbe .esfinge_museu
+.figuras_museu:
  mov esi,figuras_museu
 .procurar_museu:
  cmp byte [esi],0
@@ -1054,12 +1080,28 @@ desenhar:
  jz .tile_museu
  mov esi,porta_museu_aberta
  jmp .tile_museu
+.dinossauro_museu:
+ mov esi,dinossauro_museu
+ cmp al,'s'
+ je .bloco_bgra
+ movzx eax,al
+ sub eax,'0'
+ shl eax,10
+ add esi,eax
+ jmp .bloco_bgra
+.esfinge_museu:
+ mov esi,esfinge_museu
+ movzx eax,al
+ sub eax,'4'
+ shl eax,10
+ add esi,eax
+ jmp .bloco_bgra
 .diamante_no_museu:
  mov esi,parede_museu
  call desenhar_tile_museu
  cmp dword [diamante_coletado],0
- jne .proxima_casa
- mov esi,diamante_joia
+ jne .vitrine_vazia
+ mov esi,diamante_roxo
  jmp .bloco_bgra
 .parede_museu:
  cmp ebx,5
@@ -1077,7 +1119,7 @@ desenhar:
  mov esi,moldura_museu
  cmp ebx,COLS
  jb .tile_museu
- cmp ebx,13*COLS
+ cmp ebx,14*COLS
  jae .tile_museu
  mov eax,ebx
  xor edx,edx
@@ -1133,8 +1175,8 @@ desenhar:
  mov esi,pedestal_praia
  call desenhar_tile_praia
  cmp dword [diamante_coletado],0
- jne .proxima_casa
- mov esi,diamante_joia
+ jne .vitrine_vazia
+ mov esi,diamante_verde
  jmp .bloco_bgra
 .tile_praia:
  call desenhar_tile_praia
@@ -1246,6 +1288,16 @@ desenhar:
  add edi,WIDTH*8
  dec edx
  jnz .ampliar_linha
+ ; Exposicoes usam a resolucao final, sem ampliar o sprite reduzido de 32x32.
+ cmp dword [fase],1
+ jne .exibir_imagem
+ mov esi,dinossauro_museu_detalhado
+ mov edi,pixels_tela+((1+1)*16*2*WIDTH*2+1*16*2)*4
+ call desenhar_exposicao_detalhada
+ mov esi,esfinge_museu_detalhada
+ mov edi,pixels_tela+((12+1)*16*2*WIDTH*2+16*16*2)*4
+ call desenhar_exposicao_detalhada
+.exibir_imagem:
  pcall SetDIBitsToDevice,[dc],0,0,WIDTH*2,HEIGHT*2,0,0,0,HEIGHT*2,pixels_tela,bmi,0
  pcall GetStockObject,16
  pcall SelectObject,[dc],eax
@@ -1695,6 +1747,27 @@ interpolar_casa:
  pop eax
  ret
 
+; Exposicoes opacas de 64x64, compostas com o piso e fora da caixa central.
+desenhar_exposicao_detalhada:
+ pushad
+ mov edx,64
+.linha:
+ mov ecx,64
+.pixel:
+ lodsd
+ cmp dword [estado],0
+ je .gravar
+ and eax,0x00fefefe
+ shr eax,1
+.gravar:
+ stosd
+ loop .pixel
+ add edi,(WIDTH*2-64)*4
+ dec edx
+ jnz .linha
+ popad
+ ret
+
 ; Sprites da referencia: BGRA 16x16, inteiramente dentro de uma casa.
 desenhar_bgra:
 desenhar_personagem:
@@ -1822,7 +1895,14 @@ patife: incbin "assets/patife_animacoes.bgra"
 parede: incbin "assets/parede.bgra"
 parede_central: incbin "assets/parede_central.bgra"
 diamante_pedra: incbin "assets/diamante_pedra.bgra"
-diamante_joia: incbin "assets/diamante_joia.bgra"
+diamante_azul: incbin "assets/diamante_azul.bgra"
+diamante_roxo: incbin "assets/diamante_roxo.bgra"
+diamante_verde: incbin "assets/diamante_verde.bgra"
+vitrine_vazia: incbin "assets/vitrine_vazia.bgra"
+dinossauro_museu: incbin "assets/dinossauro_museu.bgra"
+esfinge_museu: incbin "assets/esfinge_museu.bgra"
+dinossauro_museu_detalhado: incbin "assets/dinossauro_museu_detalhado.bgra"
+esfinge_museu_detalhada: incbin "assets/esfinge_museu_detalhado.bgra"
 pedra_diamante: incbin "assets/pedra_diamante.bgra"
 algema_esquerda: incbin "assets/algema_esquerda.bgra"
 algema_direita: incbin "assets/algema_direita.bgra"

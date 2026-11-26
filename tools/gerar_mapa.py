@@ -82,9 +82,21 @@ for y in range(source.height):
         r, g, b, _ = source.getpixel((x, y))
         if g > r + 20 and b > r + 20:
             mask.putpixel((x, y), 255)
-mask = mask.filter(ImageFilter.MaxFilter(3))
+# Conserva o enquadramento, mas nao copia o contorno azul da pedra original.
+bounds = mask.filter(ImageFilter.MaxFilter(3)).getbbox()
+mask = Image.new("L", source.size)
+draw = ImageDraw.Draw(mask)
+for y in range(source.height):
+    bright = []
+    for x in range(source.width):
+        r, g, b, _ = source.getpixel((x, y))
+        if g >= 120 and b >= 135 and g > r + 20 and b > r + 20:
+            bright.append(x)
+    if bright:
+        # Inclui as facetas claras internas sem trazer o fundo azul em volta.
+        draw.line((min(bright), y, max(bright), y), fill=255)
 source.putalpha(mask)
-source = source.crop(mask.getbbox()).resize((14, 14), Image.Resampling.NEAREST)
+source = source.crop(bounds).resize((14, 14), Image.Resampling.NEAREST)
 jewel = Image.new("RGBA", (16, 16))
 jewel.paste(source, (1, 1))
 for y in range(16):

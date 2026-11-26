@@ -54,3 +54,15 @@ Os desenhos usam o quadro IDLE e os seis quadros ANDANDO da imagem fornecida em 
 ## Desenho do mapa
 
 Paredes, linha central pontilhada, diamante sobre a pedra, pisos e algemas da Cadeia usam blocos de 16 × 16 pixels extraídos de `assets/mapa-referencia.png`. `python3 tools/gerar_mapa.py` regenera esses arquivos com Pillow instalado. Os ícones das alavancas A e B e das grades estão em `icones.inc`. A grade fechada usa a letra A e barras douradas. Quando abre, a casa volta a mostrar o piso. Os desenhos são incorporados ao executável.
+
+
+## Cores dos diamantes
+
+A Cadeia usa o diamante azul, o Museu usa o roxo e a Praia usa o verde. As vitrines completas, com vidro, moldura e joia, são extraídas de `assets/diamantes_vidro_referencia.png`, adaptadas a 16 × 16 pixels e incorporadas ao executável. Para regenerá-los, execute `python3 tools/gerar_diamantes.py` com Pillow instalado. Depois da coleta, a vitrine passa a usar `assets/vitrine_vazia_referencia.png`, mantendo o vidro vazio visível e o bloco sólido nas três fases.
+
+
+O fóssil no canto do Museu usa a referência `assets/dinossauro_museu_referencia.png`, com pedestal e corda, em uma área sólida de 2 × 2 blocos. `python3 tools/gerar_dinossauro.py` regenera os quatro blocos com Pillow instalado.
+
+A esfinge no canto inferior direito do Museu ocupa 2 × 2 blocos sólidos, com pedestal e corda da referência `assets/esfinge_museu_referencia.png`. Para regenerá-la, execute `python3 tools/gerar_esfinge.py` com Pillow instalado.
+
+As duas exposições usam também sprites detalhados de 64 × 64 pixels, derivados diretamente das referências e desenhados na resolução final da janela. Assim, preservam mais detalhes dentro da mesma área de 2 × 2 blocos. Os scripts geram ambas as resoluções; nas telas de pausa e fim de jogo, as exposições acompanham o escurecimento do mapa.
