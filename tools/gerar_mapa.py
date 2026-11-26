@@ -5,7 +5,7 @@ Executar com Python e Pillow instalados. As alavancas mantem os sprites originai
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,3 +73,23 @@ draw.rectangle((1, 13, 14, 15), fill="#607083")
 draw.line((1, 15, 14, 15), fill="#263749")
 stone.save(ROOT / "assets/pedra_diamante.png")
 (ROOT / "assets/pedra_diamante.bgra").write_bytes(stone.tobytes("raw", "BGRA"))
+
+# Reaproveita a joia da cadeia, sem a pedra cinza, nas demais fases.
+source = Image.open(ROOT / "assets/diamante_pedra.png").convert("RGBA")
+mask = Image.new("L", source.size)
+for y in range(source.height):
+    for x in range(source.width):
+        r, g, b, _ = source.getpixel((x, y))
+        if g > r + 20 and b > r + 20:
+            mask.putpixel((x, y), 255)
+mask = mask.filter(ImageFilter.MaxFilter(3))
+source.putalpha(mask)
+source = source.crop(mask.getbbox()).resize((14, 14), Image.Resampling.NEAREST)
+jewel = Image.new("RGBA", (16, 16))
+jewel.paste(source, (1, 1))
+for y in range(16):
+    for x in range(16):
+        if jewel.getpixel((x, y))[3] == 0:
+            jewel.putpixel((x, y), (0, 0, 0, 0))
+jewel.save(ROOT / "assets/diamante_joia.png")
+(ROOT / "assets/diamante_joia.bgra").write_bytes(jewel.tobytes("raw", "BGRA"))
