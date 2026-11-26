@@ -53,6 +53,8 @@ A folha `assets/personagens-movimento-referencia.png` fornece os quatro quadros 
 
 ## Desenho do mapa
 
+O ícone das algemas no chão é recortado de `assets/algema-referencia.png` e desenhado em 32 × 32 pixels nas três fases. Para regenerá-lo com fundo transparente, execute `python tools/gerar_algema.py` com Pillow instalado.
+
 Paredes, linha central pontilhada, pisos e algemas da Cadeia usam blocos de 16 × 16 pixels extraídos de `assets/mapa-referencia.png`. `python3 tools/gerar_mapa.py` regenera esses arquivos com Pillow instalado. Os ícones das alavancas A e B e das grades estão em `icones.inc`. A grade fechada usa a letra A e barras douradas. Quando abre, a casa volta a mostrar o piso. Os desenhos são incorporados ao executável.
 
 
