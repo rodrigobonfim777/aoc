@@ -74,7 +74,18 @@ def normalize_rows(rows):
             silhouette = alpha.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
             outline = Image.new('RGBA', canvas.size, (22, 21, 29))
             outline.putalpha(silhouette.crop((2, 2, SIZE + 2, SIZE + 2)))
-            yield Image.alpha_composite(outline, canvas)
+            restored = Image.alpha_composite(outline, canvas)
+            # Nas pernas, mantenha o espaço entre os pés da referência. Levante
+            # as sombras do tecido sem clarear a pele ou os detalhes das algemas.
+            for y in range(SIZE - height // 3, SIZE):
+                for x in range((SIZE - width) // 2, (SIZE - width) // 2 + width):
+                    red, green, blue, opacity = canvas.getpixel((x, y))
+                    if not opacity:
+                        restored.putpixel((x, y), (0, 0, 0, 0))
+                    elif max(red, green, blue) < 110 and max(red, green, blue) - min(red, green, blue) < 35:
+                        lift = (110 - max(red, green, blue)) // 3
+                        restored.putpixel((x, y), (red + lift, green + lift, blue + lift, opacity))
+            yield restored
 
 
 def main():

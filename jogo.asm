@@ -9,10 +9,9 @@
 %define GUARDA_INICIO (2*COLS+17)
 %define GUARDA_PRAIA_ESQUERDA (2*COLS+1)
 %define RIGHT_START (13*COLS+17)
-%define QUADROS_PASSO 12
+%define QUADROS_PASSO 7
 %define QUADROS_GUARDA 40
 %define INTERVALO_QUADRO 16
-%define MAX_COMANDOS 16
 %define QUADROS_PERSONAGEM 4
 %define QUADROS_POLICIAL 7
 %define TEMPO_QUEDA_ALGEMA 16
@@ -182,9 +181,7 @@ animacao_homem dd 0,0,0     ; direcao, fase da caminhada, tempo na algema
 animacao_mulher dd 1,0,0
 tecla_movimento dd 0
 rumo_ativo dd 0
-comandos_inicio dd 0
-comandos_fim dd 0
-comandos_quantidade dd 0
+proximo_rumo dd 0
 direcoes dd -COLS,-1,1,COLS
 janela dd 0
 dc dd 0
@@ -420,24 +417,13 @@ reiniciar:
  mov dword [animacao_mulher+8],0
  mov dword [tecla_movimento],0
  mov dword [rumo_ativo],0
- mov dword [comandos_inicio],0
- mov dword [comandos_fim],0
- mov dword [comandos_quantidade],0
+ mov dword [proximo_rumo],0
  ret
 
 mover:
  cmp dword [quadros_restantes],0
  je iniciar_passo
- ; Enfileira toques durante a transicao, sem repetir eventos do teclado.
- cmp dword [comandos_quantidade],MAX_COMANDOS
- jae .fim
- mov eax,[comandos_fim]
- mov [fila_comandos+eax*4],edx
- inc eax
- and eax,MAX_COMANDOS-1
- mov [comandos_fim],eax
- inc dword [comandos_quantidade]
-.fim:
+ mov [proximo_rumo],edx     ; usa o toque mais recente na proxima casa
  ret
 
 iniciar_passo:
@@ -451,10 +437,9 @@ iniciar_passo:
  jne .limpar_aviso
  mov eax,[origem_mulher]
  cmp eax,[mulher]
- je .animacao
+ je .fim
 .limpar_aviso:
  mov dword [aviso_coleta],0
-.animacao:
  mov eax,[origem_homem]
  mov ebx,[homem]
  mov edx,animacao_homem
@@ -463,7 +448,8 @@ iniciar_passo:
  mov ebx,[mulher]
  mov edx,animacao_mulher
  call atualizar_direcao
- mov dword [quadros_restantes],QUADROS_PASSO
+ mov dword [quadros_restantes],QUADROS_PASSO-1
+.fim:
  ret
 
 ; EAX = origem, EBX = destino, EDX = dados de animacao do personagem.
@@ -527,19 +513,13 @@ avancar_animacao:
 .comando:
  cmp dword [estado],0
  jne .fim
- cmp dword [comandos_quantidade],0
- jne .retirar
+ xor edx,edx
+ xchg edx,[proximo_rumo]
+ test edx,edx
+ jnz .iniciar
  cmp dword [tecla_movimento],0
  je .fim
  mov edx,[rumo_ativo]
- jmp .iniciar
-.retirar:
- mov eax,[comandos_inicio]
- mov edx,[fila_comandos+eax*4]
- inc eax
- and eax,MAX_COMANDOS-1
- mov [comandos_inicio],eax
- dec dword [comandos_quantidade]
 .iniciar:
  call iniciar_passo
  mov ebx,1
@@ -2308,5 +2288,4 @@ fila resd COLS*ROWS
 anterior resd COLS*ROWS
 pixels resd WIDTH*HEIGHT
 pixels_tela resd WIDTH*HEIGHT*4
-fila_comandos resd MAX_COMANDOS
 reserve_size equ $-file_end
