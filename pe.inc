@@ -73,6 +73,8 @@ EndPaint: dd RVA(hint_EndPaint)
 InvalidateRect: dd RVA(hint_InvalidateRect)
 AdjustWindowRect: dd RVA(hint_AdjustWindowRect)
 LoadCursorA: dd RVA(hint_LoadCursorA)
+SetTimer: dd RVA(hint_SetTimer)
+KillTimer: dd RVA(hint_KillTimer)
 dd 0
 align 2
 hint_RegisterClassA: dw 0
@@ -113,9 +115,15 @@ db 'AdjustWindowRect',0
 align 2
 hint_LoadCursorA: dw 0
 db 'LoadCursorA',0
+align 2
+hint_SetTimer: dw 0
+db 'SetTimer',0
+align 2
+hint_KillTimer: dw 0
+db 'KillTimer',0
 align 4
 gdi_list:
-StretchDIBits: dd RVA(hint_StretchDIBits)
+SetDIBitsToDevice: dd RVA(hint_SetDIBitsToDevice)
 TextOutA: dd RVA(hint_TextOutA)
 SetBkMode: dd RVA(hint_SetBkMode)
 SetTextColor: dd RVA(hint_SetTextColor)
@@ -123,8 +131,8 @@ GetStockObject: dd RVA(hint_GetStockObject)
 SelectObject: dd RVA(hint_SelectObject)
 dd 0
 align 2
-hint_StretchDIBits: dw 0
-db 'StretchDIBits',0
+hint_SetDIBitsToDevice: dw 0
+db 'SetDIBitsToDevice',0
 align 2
 hint_TextOutA: dw 0
 db 'TextOutA',0
