@@ -121,6 +121,7 @@ mulher dd RIGHT_START       ; Patife
 chaves dd 0                 ; bit 0 = A, bit 1 = B
 presos dd 0                 ; bit 0 = homem algemado, bit 1 = mulher algemada
 diamante_coletado dd 0
+aviso_coleta dd 0
 estado dd 0                 ; 0 jogando, 1 pausa, 2 vitoria, 3 capturados
 motivo_derrota dd 0         ; 1/2 guarda pegou homem/mulher; 3 ambos presos; 4 porta
 ; A rotina de patrulha recebe em EBP o endereco de um destes blocos.
@@ -369,6 +370,7 @@ reiniciar:
  mov dword [chaves],0
  mov dword [presos],0
  mov dword [diamante_coletado],0
+ mov dword [aviso_coleta],0
  mov dword [estado],0
  mov dword [motivo_derrota],0
  mov dword [quadros_restantes],0
@@ -404,6 +406,15 @@ iniciar_passo:
  mov eax,[mulher]
  mov [origem_mulher],eax
  call executar_passo
+ mov eax,[origem_homem]
+ cmp eax,[homem]
+ jne .limpar_aviso
+ mov eax,[origem_mulher]
+ cmp eax,[mulher]
+ je .animacao
+.limpar_aviso:
+ mov dword [aviso_coleta],0
+.animacao:
  mov eax,[origem_homem]
  mov ebx,[homem]
  mov edx,animacao_homem
@@ -668,6 +679,7 @@ encerrar_derrota:
  ret
 
 interagir:
+ mov dword [aviso_coleta],0
  call resgatar
  mov eax,[homem]
  call acionar_alavanca
@@ -732,13 +744,28 @@ coletar_diamante:
  jne .fim
  cmp dword [diamante_coletado],0
  jne .fim
- mov eax,[chaves]
- cmp eax,[chaves_necessarias]
- jne .fim
  call dupla_ao_lado_diamante
  test eax,eax
- jz .fim
+ jz .faltam_personagens
  mov dword [diamante_coletado],1
+.fim:
+ ret
+.faltam_personagens:
+ mov esi,coleta_posicione_dupla
+ jmp avisar_coleta
+
+; Explica uma tentativa frustrada apenas quando alguem esta junto da joia.
+avisar_coleta:
+ cmp dword [homem],COLS+8
+ je .mostrar
+ cmp dword [homem],COLS+10
+ je .mostrar
+ cmp dword [mulher],COLS+8
+ je .mostrar
+ cmp dword [mulher],COLS+10
+ jne .fim
+.mostrar:
+ mov [aviso_coleta],esi
 .fim:
  ret
 
@@ -1028,9 +1055,12 @@ desenhar:
  mov esi,porta_museu_aberta
  jmp .tile_museu
 .diamante_no_museu:
+ mov esi,parede_museu
+ call desenhar_tile_museu
  cmp dword [diamante_coletado],0
- je .diamante_visivel
- jmp .proxima_casa
+ jne .proxima_casa
+ mov esi,diamante_joia
+ jmp .bloco_bgra
 .parede_museu:
  cmp ebx,5
  je .bandeira
@@ -1100,9 +1130,12 @@ desenhar:
  mov esi,porta_museu_aberta
  jmp .tile_praia
 .diamante_na_praia:
- cmp dword [diamante_coletado],0
- je .diamante_visivel
  mov esi,pedestal_praia
+ call desenhar_tile_praia
+ cmp dword [diamante_coletado],0
+ jne .proxima_casa
+ mov esi,diamante_joia
+ jmp .bloco_bgra
 .tile_praia:
  call desenhar_tile_praia
 .proxima_casa:
@@ -1280,9 +1313,11 @@ desenhar:
  mov esi,ajuda_fuga
  jmp .aviso
 .coleta:
- mov eax,[chaves]
- cmp eax,[chaves_necessarias]
- jne .aviso
+ cmp dword [aviso_coleta],0
+ je .condicoes_coleta
+ mov esi,[aviso_coleta]
+ jmp .aviso
+.condicoes_coleta:
  call dupla_ao_lado_diamante
  test eax,eax
  jz .aviso
@@ -1708,6 +1743,7 @@ ajuda db 'WASD/Setas: mover   Espaco: alavanca/resgate   P: pausa   R: reiniciar
 indicador_teste db 'TESTE F1-F3',0
 %endif
 ajuda_coleta db 'Aperte Espaco para pegar o diamante. Depois voltem a porta azul.',0
+coleta_posicione_dupla db 'PARA PEGAR: um personagem de cada lado; depois aperte Espaco.',0
 ajuda_fuga db 'DIAMANTE COLETADO! Levem os dois a porta azul e apertem Espaco.',0
 homem_preso db 'PILANTRA PRESO! Aproxime a Patife e aperte Espaco para soltar.',0
 mulher_presa db 'PATIFE PRESA! Aproxime o Pilantra e aperte Espaco para soltar.',0
@@ -1786,6 +1822,7 @@ patife: incbin "assets/patife_animacoes.bgra"
 parede: incbin "assets/parede.bgra"
 parede_central: incbin "assets/parede_central.bgra"
 diamante_pedra: incbin "assets/diamante_pedra.bgra"
+diamante_joia: incbin "assets/diamante_joia.bgra"
 pedra_diamante: incbin "assets/pedra_diamante.bgra"
 algema_esquerda: incbin "assets/algema_esquerda.bgra"
 algema_direita: incbin "assets/algema_direita.bgra"
