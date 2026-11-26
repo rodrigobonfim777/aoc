@@ -1,4 +1,4 @@
-; Patife e Pilantra - fase 01. NASM, x86 de 32 bits, Win32.
+; Patife e Pilantra. NASM, x86 de 32 bits, Win32.
 %include "pe.inc"
 %define COLS 19
 %define ROWS 15
@@ -13,6 +13,41 @@
 %define MAX_COMANDOS 16
 %define QUADROS_PERSONAGEM 7
 %define BYTES_QUADRO (16*16*4)
+%define TOTAL_FASES 3
+
+; TEMPORARIO: habilite com -dATALHOS_TESTE=1 apenas para testar.
+; Na entrega final, gere o executavel sem essa opcao.
+%ifndef ATALHOS_TESTE
+ %define ATALHOS_TESTE 0
+%endif
+
+; Paredes, joia e decoracoes bloqueiam a dupla e o guarda.
+%macro bloquear_casa_solida 2
+ cmp %1,'#'
+ je %2
+ cmp %1,'D'
+ je %2
+ cmp %1,'a'
+ je %2
+ cmp %1,'b'
+ je %2
+ cmp %1,'s'
+ je %2
+ cmp %1,'p'
+ je %2
+ cmp %1,'v'
+ je %2
+ cmp %1,'c'
+ je %2
+ cmp %1,'f'
+ je %2
+ cmp %1,'u'
+ je %2
+ cmp %1,'q'
+ je %2
+ cmp %1,'k'
+ je %2
+%endmacro
 
 ; Uma linha da imagem = uma linha da matriz. Indice = linha*19 + coluna.
 ; # parede, T armadilha, G grade A, a/b alavancas, D diamante,
@@ -34,6 +69,52 @@ mapa_inicial:
  db '#H.....#.E.......M#'
  db '###################'
 
+; Museu: s = fossil, p = quadro, v = vaso, c = cordao, f = vitrine.
+mapa_museu:
+ db '###################'
+ db '#s.......D........#'
+ db '#c.....#.#......Tp#'
+ db '#..#c#.#.#.#c#.#..#'
+ db '#..###.#.#.###.#.##'
+ db 'v....#T..#V.......#'
+ db '#.##.###.#.#.#.#..#'
+ db '#........#c#.#b#..#'
+ db '#..#########.###..#'
+ db '#.T......#....T...#'
+ db '#.######.#.#.#.#..#'
+ db '#....c...#.###.#..#'
+ db '#p.H.....E.....M.f#'
+ db '###################'
+
+; Praia: u = palmeira, q = pranchas, k = castelo de areia, f = caixote.
+mapa_praia:
+ db '###################'
+ db '#u.......D.....q.u#'
+ db '#..###...#.###....#'
+ db '#..#T#.#.#..#.....#'
+ db '#.#.V..#.##.#..k..#'
+ db '#.#f.#...#..###.#.#'
+ db '#.####.###.....V#.#'
+ db '#T.....#.#.#.#....#'
+ db '#.####.#.#.#b#.#T.#'
+ db '#.#......#.###.#..#'
+ db '#.#.####.#....#T..#'
+ db '#.#T...H.##.##.##.#'
+ db '#u.##.##.#..f#T..u#'
+ db '#........E.M......#'
+ db '###################'
+
+; Mapa, posicoes de Pilantra/Patife/guarda, tamanho, porta, chaves e margem vertical.
+fases:
+ dd mapa_inicial,LEFT_START,RIGHT_START,GUARDA_INICIO,15*COLS,13*COLS+9,3,0
+ dd mapa_museu,12*COLS+3,12*COLS+15,5*COLS+10,14*COLS,12*COLS+9,2,8*WIDTH*4
+ dd mapa_praia,11*COLS+7,13*COLS+11,4*COLS+4,15*COLS,13*COLS+9,2,0
+fase dd 0                  ; 0 cadeia, 1 museu, 2 praia
+tamanho_mapa dd 0
+pos_porta dd 0
+chaves_necessarias dd 0
+margem_mapa dd 0
+
 mapa times COLS*ROWS db 0   ; copia da fase, com as algemas ainda ativas
 homem dd LEFT_START         ; Pilantra
 mulher dd RIGHT_START       ; Patife
@@ -42,12 +123,23 @@ presos dd 0                 ; bit 0 = homem algemado, bit 1 = mulher algemada
 diamante_coletado dd 0
 estado dd 0                 ; 0 jogando, 1 pausa, 2 vitoria, 3 capturados
 motivo_derrota dd 0         ; 1/2 guarda pegou homem/mulher; 3 ambos presos; 4 porta
+; A rotina de patrulha recebe em EBP o endereco de um destes blocos.
+struc guarda
+ .pos resd 1
+ .destino resd 1
+ .quadros resd 1
+ .origem resd 1
+endstruc
 pos_guarda dd GUARDA_INICIO
 destino_guarda dd GUARDA_INICIO
 quadros_guarda dd 0
+origem_guarda dd GUARDA_INICIO
+pos_guarda_extra dd -1
+destino_guarda_extra dd -1
+quadros_guarda_extra dd 0
+origem_guarda_extra dd -1
 origem_homem dd LEFT_START
 origem_mulher dd RIGHT_START
-origem_guarda dd GUARDA_INICIO
 quadros_restantes dd 0
 animacao_homem dd 0,0       ; direcao (direita/esquerda/costas/frente), fase
 animacao_mulher dd 1,0
@@ -61,7 +153,7 @@ janela dd 0
 dc dd 0
 indice dd 0
 classe db 'PatifePilantraAOC',0
-titulo db 'Patife e Pilantra | Fase 1',0
+titulo db 'Patife e Pilantra',0
 align 4
 wc dd 3,procedimento,0,0,0,0,0,0,0,classe
 area dd 0,0,WIDTH*2,HEIGHT*2
@@ -167,8 +259,15 @@ procedimento:
  ret 16
 
 teclado:
+%if ATALHOS_TESTE
+ lea edx,[eax-0x70]         ; VK_F1 ... VK_F3
+ cmp edx,TOTAL_FASES
+ jb .fase_teste
+%endif
  cmp eax,'R'
  je reiniciar
+ cmp eax,13
+ je proxima_fase
  cmp eax,'P'
  jne .jogar
  test dword [ebp+20],1<<30 ; segurar P nao deve alternar repetidamente
@@ -210,30 +309,68 @@ teclado:
  mov [rumo_ativo],edx
  jmp mover
 
+%if ATALHOS_TESTE
+.fase_teste:
+ mov [fase],edx
+ jmp reiniciar
+%endif
+
+proxima_fase:
+ cmp dword [estado],2
+ jne .fim
+ cmp dword [fase],TOTAL_FASES-1
+ jae .fim
+ inc dword [fase]
+ jmp reiniciar
+.fim:
+ ret
+
 reiniciar:
  push esi
  push edi
  push ecx
- mov esi,mapa_inicial
+ mov eax,[fase]
+ shl eax,5
+ add eax,fases
+ mov esi,[eax]
  mov edi,mapa
- mov ecx,COLS*ROWS
+ mov ecx,[eax+16]
+ mov [tamanho_mapa],ecx
  rep movsb
  pop ecx
  pop edi
  pop esi
- mov dword [pos_guarda],GUARDA_INICIO
- mov dword [destino_guarda],GUARDA_INICIO
+ mov edx,[eax+20]
+ mov [pos_porta],edx
+ mov edx,[eax+24]
+ mov [chaves_necessarias],edx
+ mov edx,[eax+28]
+ mov [margem_mapa],edx
+ mov edx,[eax+12]
+ mov [pos_guarda],edx
+ mov [origem_guarda],edx
+ mov [destino_guarda],edx
  mov dword [quadros_guarda],0
- mov dword [homem],LEFT_START
- mov dword [mulher],RIGHT_START
+ mov edx,-1
+ cmp dword [fase],2
+ jne .guarda_extra
+ mov edx,6*COLS+15
+.guarda_extra:
+ mov [pos_guarda_extra],edx
+ mov [origem_guarda_extra],edx
+ mov [destino_guarda_extra],edx
+ mov dword [quadros_guarda_extra],0
+ mov edx,[eax+4]
+ mov [homem],edx
+ mov [origem_homem],edx
+ mov edx,[eax+8]
+ mov [mulher],edx
+ mov [origem_mulher],edx
  mov dword [chaves],0
  mov dword [presos],0
  mov dword [diamante_coletado],0
  mov dword [estado],0
  mov dword [motivo_derrota],0
- mov dword [origem_homem],LEFT_START
- mov dword [origem_mulher],RIGHT_START
- mov dword [origem_guarda],GUARDA_INICIO
  mov dword [quadros_restantes],0
  mov dword [animacao_homem],0
  mov dword [animacao_homem+4],0
@@ -351,38 +488,49 @@ avancar_animacao:
 ; Posicao logica so e confirmada ao terminar a transicao visual.
 atualizar_guarda:
  pushad
- cmp dword [estado],0
- jne .parado
- cmp dword [quadros_guarda],0
- je .iniciar
- dec dword [quadros_guarda]
- jnz .transicao
- mov eax,[destino_guarda]
- mov [pos_guarda],eax
-.iniciar:
- call verificar_captura_guarda
- cmp dword [estado],0
- jne .mudou
- mov eax,[pos_guarda]
- mov [origem_guarda],eax
- mov [destino_guarda],eax
- call perseguir
- mov dword [quadros_guarda],QUADROS_GUARDA
-.transicao:
- mov eax,[origem_guarda]
- cmp eax,[destino_guarda]
- je .parado
-.mudou:
- mov dword [esp+28],1
- jmp .fim
-.parado:
- mov dword [esp+28],0
+ mov ebp,pos_guarda
+ call atualizar_um_guarda
+ mov [esp+28],eax
+ cmp dword [pos_guarda_extra],-1
+ je .fim
+ mov ebp,pos_guarda_extra
+ call atualizar_um_guarda
+ or [esp+28],eax
 .fim:
  popad
  ret
 
+atualizar_um_guarda:
+ cmp dword [estado],0
+ jne .parado
+ cmp dword [ebp+guarda.quadros],0
+ je .iniciar
+ dec dword [ebp+guarda.quadros]
+ jnz .transicao
+ mov eax,[ebp+guarda.destino]
+ mov [ebp+guarda.pos],eax
+.iniciar:
+ call verificar_captura_guarda
+ cmp dword [estado],0
+ jne .mudou
+ mov eax,[ebp+guarda.pos]
+ mov [ebp+guarda.origem],eax
+ mov [ebp+guarda.destino],eax
+ call perseguir
+ mov dword [ebp+guarda.quadros],QUADROS_GUARDA
+.transicao:
+ mov eax,[ebp+guarda.origem]
+ cmp eax,[ebp+guarda.destino]
+ je .parado
+.mudou:
+ mov eax,1
+ ret
+.parado:
+ xor eax,eax
+ ret
+
 verificar_captura_guarda:
- mov eax,[pos_guarda]
+ mov eax,[ebp+guarda.pos]
  cmp eax,[homem]
  je .homem
  cmp eax,[mulher]
@@ -424,14 +572,7 @@ tentar_passo:
  mov eax,[esi]
  add eax,edx
  mov cl,[mapa+eax]
- cmp cl,'#'
- je .fim
- cmp cl,'D'                 ; o diamante e alcancado pelas laterais
- je .fim
- cmp cl,'a'                 ; alavancas sao objetos, nao casas transitaveis
- je .fim
- cmp cl,'b'
- je .fim
+ bloquear_casa_solida cl,.fim
  cmp cl,'E'
  jne .grade
  test dword [chaves],2
@@ -445,6 +586,8 @@ tentar_passo:
 .entrar:
  mov [esi],eax
  cmp eax,[pos_guarda]
+ je .guarda
+ cmp eax,[pos_guarda_extra]
  je .guarda
  cmp cl,'T'
  jne .fim
@@ -589,7 +732,8 @@ coletar_diamante:
  jne .fim
  cmp dword [diamante_coletado],0
  jne .fim
- cmp dword [chaves],3
+ mov eax,[chaves]
+ cmp eax,[chaves_necessarias]
  jne .fim
  call dupla_ao_lado_diamante
  test eax,eax
@@ -641,7 +785,7 @@ verificar_fuga:
  ret
 
 perto_da_porta:
- sub eax,13*COLS+9
+ sub eax,[pos_porta]
  cmp eax,0
  je .perto
  cmp eax,1
@@ -665,7 +809,7 @@ perseguir:
  mov ecx,COLS*ROWS
  xor eax,eax
  rep stosd
- mov eax,[pos_guarda]
+ mov eax,[ebp+guarda.pos]
  mov [anterior+eax*4],eax
  mov [fila],eax
  xor esi,esi                ; indice da proxima casa a consultar
@@ -686,15 +830,8 @@ perseguir:
  cmp dword [anterior+eax*4],0
  jne .proximo
  mov dl,[mapa+eax]
- cmp dl,'#'
- je .proximo
+ bloquear_casa_solida dl,.proximo
  cmp dl,'T'
- je .proximo
- cmp dl,'D'
- je .proximo
- cmp dl,'a'
- je .proximo
- cmp dl,'b'
  je .proximo
  cmp dl,'E'
  jne .grade
@@ -717,12 +854,12 @@ perseguir:
  jmp .consultar
 .caminho:
  mov eax,[anterior+ebx*4]
- cmp eax,[pos_guarda]
+ cmp eax,[ebp+guarda.pos]
  je .avancar
  mov ebx,eax
  jmp .caminho
 .avancar:
- mov [destino_guarda],ebx
+ mov [ebp+guarda.destino],ebx
 .fim:
  ret
 
@@ -768,8 +905,13 @@ desenhar:
  shl edx,4
  lea edi,[eax+edx+WIDTH*16]
  lea edi,[pixels+edi*4]
+ add edi,[margem_mapa]
  mov ebx,[indice]
  mov al,[mapa+ebx]
+ cmp dword [fase],2
+ je .praia
+ cmp dword [fase],1
+ je .museu
  cmp al,'#'
  je .parede
  push eax
@@ -847,9 +989,110 @@ desenhar:
  mov esi,parede_central
 .bloco_bgra:
  call desenhar_bgra
+ jmp .proxima_casa
+.museu:
+ cmp al,'#'
+ je .parede_museu
+ cmp ebx,5*COLS
+ je .planta_museu
+ mov esi,piso_museu
+ call desenhar_tile_museu
+ mov esi,figuras_museu
+.procurar_museu:
+ cmp byte [esi],0
+ je .proxima_casa
+ cmp al,[esi]
+ je .objeto_museu
+ add esi,5
+ jmp .procurar_museu
+.objeto_museu:
+ mov esi,[esi+1]
+ cmp al,'D'
+ jne .porta_museu
+ cmp dword [diamante_coletado],0
+ jne .proxima_casa
+.porta_museu:
+ cmp al,'E'
+ jne .tile_museu
+ test dword [chaves],2
+ jz .tile_museu
+ mov esi,porta_museu_aberta
+ jmp .tile_museu
+.parede_museu:
+ cmp ebx,5
+ je .bandeira
+ cmp ebx,12
+ je .bandeira
+ cmp ebx,2
+ je .luz
+ cmp ebx,4
+ je .luz
+ cmp ebx,13
+ je .luz
+ cmp ebx,16
+ je .luz
+ mov esi,moldura_museu
+ cmp ebx,COLS
+ jb .tile_museu
+ cmp ebx,13*COLS
+ jae .tile_museu
+ mov eax,ebx
+ xor edx,edx
+ mov ecx,COLS
+ div ecx
+ mov esi,coluna_museu
+ test edx,edx
+ jz .tile_museu
+ cmp edx,COLS-1
+ je .tile_museu
+ mov esi,parede_museu
+ jmp .tile_museu
+.planta_museu:
+ mov esi,coluna_museu
+ call desenhar_tile_museu
+ mov esi,vaso_museu
+ jmp .tile_museu
+.luz:
+ mov esi,luz_museu
+ jmp .tile_museu
+.bandeira:
+ mov esi,bandeira_museu
+.tile_museu:
+ call desenhar_tile_museu
+ jmp .proxima_casa
+.praia:
+ mov esi,parede_praia
+ cmp al,'#'
+ je .tile_praia
+ mov esi,piso_praia
+ call desenhar_tile_praia
+ mov esi,figuras_praia
+.buscar_figura_praia:
+ cmp byte [esi],0
+ je .proxima_casa
+ cmp al,[esi]
+ je .objeto_praia
+ add esi,5
+ jmp .buscar_figura_praia
+.objeto_praia:
+ mov esi,[esi+1]
+ cmp al,'D'
+ jne .porta_praia
+ cmp dword [diamante_coletado],0
+ jne .proxima_casa
+ mov esi,pedestal_praia
+.porta_praia:
+ cmp al,'E'
+ jne .tile_praia
+ test dword [chaves],2
+ jz .tile_praia
+ mov esi,porta_museu_aberta
+.tile_praia:
+ call desenhar_tile_praia
 .proxima_casa:
  inc dword [indice]
- cmp dword [indice],ROWS*COLS
+ mov eax,[indice]
+ cmp eax,[tamanho_mapa]
  jb .casa
  ; Personagens sao desenhados depois de todas as casas do mapa.
  mov dword [indice],0
@@ -862,10 +1105,24 @@ desenhar:
  shl edx,4
  lea edi,[eax+edx+WIDTH*16]
  lea edi,[pixels+edi*4]
+ add edi,[margem_mapa]
  mov ebx,[indice]
  mov esi,vigia
  cmp ebx,[destino_guarda]
- je .guarda
+ jne .verificar_guarda_extra
+ push edi
+ mov eax,[origem_guarda]
+ mov edx,[quadros_guarda]
+ call .desenhar_guarda
+ pop edi
+.verificar_guarda_extra:
+ cmp ebx,[destino_guarda_extra]
+ jne .jogadores
+ push edi
+ mov eax,[origem_guarda_extra]
+ mov edx,[quadros_guarda_extra]
+ call .desenhar_guarda
+ pop edi
 .jogadores:
  mov esi,pilantra
  cmp ebx,[homem]
@@ -874,13 +1131,10 @@ desenhar:
  cmp ebx,[mulher]
  je .mulher
  jmp .proxima
-.guarda:
- push edi
- mov eax,[origem_guarda]
+.desenhar_guarda:
  call interpolar_guarda
  call desenhar_ator
- pop edi
- jmp .jogadores
+ ret
 .homem:
  mov edx,animacao_homem
  mov eax,[origem_homem]
@@ -909,7 +1163,8 @@ desenhar:
  bloco 6,10,4,1,0x748699
 .proxima:
  inc dword [indice]
- cmp dword [indice],ROWS*COLS
+ mov eax,[indice]
+ cmp eax,[tamanho_mapa]
  jb .pessoas
  cmp dword [estado],1
  jne .derrota
@@ -948,9 +1203,22 @@ desenhar:
  pcall SetBkMode,[dc],1
  pcall SetTextColor,[dc],0xf6e8dc
  mov esi,cabecalho
+ cmp dword [fase],0
+ je .escrever_cabecalho
+ mov esi,cabecalho_museu
+ cmp dword [fase],1
+ je .escrever_cabecalho
+ mov esi,cabecalho_praia
+.escrever_cabecalho:
  mov eax,8
  mov edx,7
  call escrever
+%if ATALHOS_TESTE
+ mov esi,indicador_teste
+ mov eax,340
+ mov edx,7
+ call escrever
+%endif
  mov esi,statusA
  mov eax,[chaves]
  and eax,1
@@ -963,11 +1231,22 @@ desenhar:
  mov eax,[diamante_coletado]
  add al,'0'
  mov [marcaD],al
+ cmp dword [fase],0
+ je .escrever_status
+ mov esi,statusB
+.escrever_status:
  mov eax,460
  mov edx,7
  call escrever
  mov eax,[estado]
  mov esi,[avisos+eax*4]
+ cmp eax,2
+ jne .verificar_aviso_derrota
+ cmp dword [fase],TOTAL_FASES-1
+ jne .aviso
+ mov esi,vitoria_praia
+ jmp .aviso
+.verificar_aviso_derrota:
  cmp eax,3
  jne .aviso_preso
  mov eax,[motivo_derrota]
@@ -991,7 +1270,8 @@ desenhar:
  mov esi,ajuda_fuga
  jmp .aviso
 .coleta:
- cmp dword [chaves],3
+ mov eax,[chaves]
+ cmp eax,[chaves_necessarias]
  jne .aviso
  call dupla_ao_lado_diamante
  test eax,eax
@@ -1054,6 +1334,10 @@ desenhar_caixa_vitoria:
  mov edx,94
  mov ecx,2
  call texto_centralizado
+ cmp dword [fase],1
+ je .museu_concluido
+ cmp dword [fase],2
+ je .praia_concluida
  mov esi,vitoria_fuga_linha1
  mov edx,118
  mov ecx,1
@@ -1067,6 +1351,28 @@ desenhar_caixa_vitoria:
  mov esi,vitoria_proxima_linha2
  mov edx,165
  call texto_pequeno_centralizado
+ jmp .fim
+.museu_concluido:
+ mov esi,vitoria_museu_linha1
+ mov edx,118
+ mov ecx,1
+ call texto_pequeno_centralizado
+ mov esi,vitoria_proxima_linha1
+ mov edx,151
+ call texto_pequeno_centralizado
+ mov esi,vitoria_proxima_linha2
+ mov edx,165
+ call texto_pequeno_centralizado
+ jmp .fim
+.praia_concluida:
+ mov esi,vitoria_praia_linha1
+ mov edx,118
+ mov ecx,1
+ call texto_pequeno_centralizado
+ mov esi,vitoria_praia_linha2
+ mov edx,151
+ call texto_pequeno_centralizado
+.fim:
  popad
  ret
 
@@ -1224,6 +1530,17 @@ sprite:
 ; Os atores usam 16x16 pixels para detalhar rostos, roupas e acessorios.
 desenhar_ator:
  pushad
+ mov ebx,paleta
+ jmp desenhar_tile_indexado
+
+desenhar_tile_museu:
+ pushad
+ mov ebx,paleta_museu
+ jmp desenhar_tile_indexado
+desenhar_tile_praia:
+ pushad
+ mov ebx,paleta_praia
+desenhar_tile_indexado:
  mov edx,16
 .linha:
  mov ecx,16
@@ -1232,7 +1549,11 @@ desenhar_ator:
  inc esi
  sub eax,'0'
  jz .transparente
- mov eax,[paleta+eax*4]
+ cmp eax,9
+ jbe .cor
+ sub eax,'A'-'0'-10
+.cor:
+ mov eax,[ebx+eax*4]
  mov [edi],eax
 .transparente:
  add edi,4
@@ -1290,11 +1611,8 @@ interpolar_posicao:
 
 interpolar_guarda:
  push ecx
- push edx
  mov ecx,QUADROS_GUARDA
- mov edx,[quadros_guarda]
  call interpolar_casa
- pop edx
  pop ecx
  ret
 
@@ -1363,17 +1681,24 @@ escrever:
 align 4096,db 0
 cabecalho db '01  PATIFE E PILANTRA   |   DUPLA DO DIAMANTE',0
 statusA db 'A:'
-marcaA db '0','  B:'
+marcaA db '0','  '
+statusB db 'B:'
 marcaB db '0',' D:'
 marcaD db '0',0
 avisos dd ajuda,pausa,vitoria,derrota
 ajuda db 'WASD/Setas: mover   Espaco: alavanca/resgate   P: pausa   R: reiniciar',0
+%if ATALHOS_TESTE
+indicador_teste db 'TESTE F1-F3',0
+%endif
 ajuda_coleta db 'Aperte Espaco para pegar o diamante. Depois voltem a porta azul.',0
 ajuda_fuga db 'DIAMANTE COLETADO! Levem os dois a porta azul e apertem Espaco.',0
 homem_preso db 'PILANTRA PRESO! Aproxime a Patife e aperte Espaco para soltar.',0
 mulher_presa db 'PATIFE PRESA! Aproxime o Pilantra e aperte Espaco para soltar.',0
 pausa db 'PAUSA   |   Pressione P para continuar.',0
 vitoria db 'FASE CONCLUIDA! Pressione Enter para a proxima fase.',0
+cabecalho_museu db '02   DUPLA DO DIAMANTE   |   MUSEU',0
+cabecalho_praia db '03   DUPLA DO DIAMANTE   |   PRAIA',0
+vitoria_praia db 'PRAIA CONCLUIDA! R para jogar esta fase novamente.',0
 derrota db 'GAME OVER! R para tentar novamente.',0
 derrota_homem db 'GAME OVER: o guarda capturou o Pilantra. R para reiniciar.',0
 derrota_mulher db 'GAME OVER: o guarda capturou a Patife. R para reiniciar.',0
@@ -1390,6 +1715,9 @@ vitoria_fuga_linha1 db 'OS LADROES CONSEGUIRAM FUGIR',0
 vitoria_fuga_linha2 db 'DA CADEIA COM O DIAMANTE',0
 vitoria_proxima_linha1 db 'PRESSIONE ENTER PARA IR',0
 vitoria_proxima_linha2 db 'PARA A PROXIMA FASE',0
+vitoria_museu_linha1 db 'A DUPLA FUGIU DO MUSEU COM A JOIA',0
+vitoria_praia_linha1 db 'A DUPLA ESCAPOU DA PRAIA COM A JOIA',0
+vitoria_praia_linha2 db 'APERTE R PARA JOGAR DE NOVO',0
 causas_game_over dd causa_generica,causa_homem,causa_mulher,causa_algemas,causa_porta
 causa_generica db 'A TENTATIVA TERMINOU',0
 causa_homem db 'O GUARDA CAPTUROU O PILANTRA',0
@@ -1412,6 +1740,46 @@ figuras:
  db 'E'
  dd entrada
  db 0
+figuras_museu:
+ db 's'
+ dd fossil_museu
+ db 'p'
+ dd placa_museu
+ db 'v'
+ dd vaso_museu
+ db 'c'
+ dd cordao_museu
+ db 'f'
+ dd vitrine_museu
+ db 'T'
+ dd algema_museu
+ db 'b'
+ dd alavanca_museu_b
+ db 'D'
+ dd diamante_museu
+ db 'E'
+ dd porta_museu
+ db 0
+%include "museu.inc"
+figuras_praia:
+ db 'u'
+ dd palmeira_praia
+ db 'q'
+ dd pranchas_praia
+ db 'k'
+ dd castelo_praia
+ db 'f'
+ dd caixote_praia
+ db 'T'
+ dd algema_museu
+ db 'b'
+ dd alavanca_museu_b
+ db 'D'
+ dd diamante_museu
+ db 'E'
+ dd porta_museu
+ db 0
+%include "praia.inc"
 align 4
 pilantra: incbin "assets/pilantra_animacoes.bgra"
 patife: incbin "assets/patife_animacoes.bgra"
