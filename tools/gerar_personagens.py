@@ -3,7 +3,7 @@
 from collections import deque
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
@@ -68,7 +68,13 @@ def normalize_rows(rows):
             sprite.putalpha(alpha)
             canvas = Image.new('RGBA', (SIZE, SIZE))
             canvas.paste(sprite, ((SIZE - width) // 2, SIZE - height), alpha)
-            yield canvas
+            # Recupera pequenos trechos escuros da roupa e da máscara removidos
+            # junto com o fundo preto, preservando as proporções de cada pose.
+            alpha = ImageOps.expand(canvas.getchannel('A'), border=2)
+            silhouette = alpha.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+            outline = Image.new('RGBA', canvas.size, (22, 21, 29))
+            outline.putalpha(silhouette.crop((2, 2, SIZE + 2, SIZE + 2)))
+            yield Image.alpha_composite(outline, canvas)
 
 
 def main():
