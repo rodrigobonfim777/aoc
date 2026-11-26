@@ -15,10 +15,10 @@
 %define BYTES_QUADRO (16*16*4)
 %define TOTAL_FASES 3
 
-; TEMPORARIO: habilite com -dATALHOS_TESTE=1 apenas para testar.
-; Na entrega final, gere o executavel sem essa opcao.
+; TEMPORARIO: F1-F3 ficam ativos durante o desenvolvimento.
+; Na entrega final, compile com -dATALHOS_TESTE=0.
 %ifndef ATALHOS_TESTE
- %define ATALHOS_TESTE 0
+ %define ATALHOS_TESTE 1
 %endif
 
 ; Paredes, joia e decoracoes bloqueiam a dupla e o guarda.

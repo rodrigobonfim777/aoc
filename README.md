@@ -8,15 +8,15 @@ nasm -f bin jogo.asm -o "Patife e Pilantra.exe"
 
 ## Atalhos temporários de teste
 
-A compilação de teste mostra **TESTE F1-F3** no topo. Pressione **F1** para abrir a Cadeia, **F2** para o Museu ou **F3** para a Praia. Cada atalho começa a fase escolhida do zero.
+O executável do repositório mostra **TESTE F1-F3** no topo. Pressione **F1** para abrir a Cadeia, **F2** para o Museu ou **F3** para a Praia. Cada atalho começa a fase escolhida do zero.
 
-Para gerar essa versão durante o desenvolvimento, use:
+**Na entrega final**, compile com os atalhos desativados:
 
 ```powershell
-nasm -dATALHOS_TESTE=1 -f bin jogo.asm -o "Patife e Pilantra - Teste.exe"
+nasm -dATALHOS_TESTE=0 -f bin jogo.asm -o "Patife e Pilantra.exe"
 ```
 
-**Na entrega final**, use o executável compilado com o comando normal acima, sem `-dATALHOS_TESTE=1`. O executável do repositório segue esse formato. O jogo começa na Cadeia e só avança após vencer e apertar Enter.
+Nessa versão, o jogo começa na Cadeia e só avança após vencer e apertar Enter.
 
 ## Como jogar
 
