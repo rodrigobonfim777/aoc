@@ -99,16 +99,16 @@ mapa_praia:
  db '#.####.#.#.#b#.#T.#'
  db '#.#......#.###.#..#'
  db '#.#.####.#....#T..#'
- db '#.#T...H.##.##.##.#'
+ db '#.#T.....##.##.##.#'
  db '#u.##.##.#..f#T..u#'
- db '#........E.M......#'
+ db '#H.......E.......M#'
  db '###################'
 
 ; Mapa, posicoes de Pilantra/Patife/guarda, tamanho, porta, chaves e margem vertical.
 fases:
  dd mapa_inicial,LEFT_START,RIGHT_START,GUARDA_INICIO,15*COLS,13*COLS+9,3,0
  dd mapa_museu,12*COLS+3,12*COLS+15,5*COLS+10,14*COLS,12*COLS+9,2,8*WIDTH*4
- dd mapa_praia,11*COLS+7,13*COLS+11,4*COLS+4,15*COLS,13*COLS+9,2,0
+ dd mapa_praia,LEFT_START,RIGHT_START,4*COLS+4,15*COLS,13*COLS+9,2,0
 fase dd 0                  ; 0 cadeia, 1 museu, 2 praia
 tamanho_mapa dd 0
 pos_porta dd 0
@@ -932,42 +932,31 @@ desenhar:
  je .algema
  cmp al,'G'
  je .grade_mapa
- mov esi,figuras
-.procurar:
- cmp byte [esi],0
- je .proxima_casa
- cmp al,[esi]
- je .objeto
- add esi,5
- jmp .procurar
-.objeto:
+ cmp al,'a'
+ je .alavanca_a
+ cmp al,'b'
+ je .alavanca_b
  cmp al,'E'
- jne .sprite
+ jne .proxima_casa
  test dword [chaves],2
  jnz .porta_aberta
-.sprite:
- mov esi,[esi+1]
+ mov esi,entrada
  call sprite
  jmp .proxima_casa
 .porta_aberta:
  mov esi,porta_aberta
  jmp .bloco_bgra
 .diamante:
- mov esi,diamante_pedra
  cmp dword [diamante_coletado],0
- je .bloco_bgra
+ je .diamante_visivel
  mov esi,pedra_diamante
+ jmp .bloco_bgra
+.diamante_visivel:
+ mov esi,diamante_pedra
  jmp .bloco_bgra
 .algema:
  mov esi,algema_esquerda
  mov ecx,algema_direita
- jmp .lado
-.grade_mapa:
- test dword [chaves],1
- jnz .proxima_casa
- mov esi,grade_esquerda
- mov ecx,grade_direita
-.lado:
  mov eax,ebx
  xor edx,edx
  push ecx
@@ -978,6 +967,27 @@ desenhar:
  jb .bloco_bgra
  mov esi,ecx
  jmp .bloco_bgra
+.grade_mapa:
+ test dword [chaves],1
+ jnz .proxima_casa
+ mov esi,icone_grade_a
+ mov ecx,paleta_grade
+ jmp .desenhar_icone
+.alavanca_a:
+ mov ecx,paleta_alavanca_a
+ mov edx,1
+ jmp .alavanca
+.alavanca_b:
+ mov ecx,paleta_alavanca_b
+ mov edx,2
+.alavanca:
+ mov esi,alavanca_esquerda
+ test [chaves],edx
+ jz .desenhar_icone
+ mov esi,alavanca_direita
+.desenhar_icone:
+ call desenhar_tile_icone
+ jmp .proxima_casa
 .parede:
  mov eax,ebx
  xor edx,edx
@@ -997,6 +1007,10 @@ desenhar:
  je .planta_museu
  mov esi,piso_museu
  call desenhar_tile_museu
+ cmp al,'D'
+ je .diamante_no_museu
+ cmp al,'b'
+ je .alavanca_b
  mov esi,figuras_museu
 .procurar_museu:
  cmp byte [esi],0
@@ -1007,17 +1021,16 @@ desenhar:
  jmp .procurar_museu
 .objeto_museu:
  mov esi,[esi+1]
- cmp al,'D'
- jne .porta_museu
- cmp dword [diamante_coletado],0
- jne .proxima_casa
-.porta_museu:
  cmp al,'E'
  jne .tile_museu
  test dword [chaves],2
  jz .tile_museu
  mov esi,porta_museu_aberta
  jmp .tile_museu
+.diamante_no_museu:
+ cmp dword [diamante_coletado],0
+ je .diamante_visivel
+ jmp .proxima_casa
 .parede_museu:
  cmp ebx,5
  je .bandeira
@@ -1066,6 +1079,10 @@ desenhar:
  je .tile_praia
  mov esi,piso_praia
  call desenhar_tile_praia
+ cmp al,'D'
+ je .diamante_na_praia
+ cmp al,'b'
+ je .alavanca_b
  mov esi,figuras_praia
 .buscar_figura_praia:
  cmp byte [esi],0
@@ -1076,17 +1093,16 @@ desenhar:
  jmp .buscar_figura_praia
 .objeto_praia:
  mov esi,[esi+1]
- cmp al,'D'
- jne .porta_praia
- cmp dword [diamante_coletado],0
- jne .proxima_casa
- mov esi,pedestal_praia
-.porta_praia:
  cmp al,'E'
  jne .tile_praia
  test dword [chaves],2
  jz .tile_praia
  mov esi,porta_museu_aberta
+ jmp .tile_praia
+.diamante_na_praia:
+ cmp dword [diamante_coletado],0
+ je .diamante_visivel
+ mov esi,pedestal_praia
 .tile_praia:
  call desenhar_tile_praia
 .proxima_casa:
@@ -1202,20 +1218,14 @@ desenhar:
  pcall SelectObject,[dc],eax
  pcall SetBkMode,[dc],1
  pcall SetTextColor,[dc],0xf6e8dc
- mov esi,cabecalho
- cmp dword [fase],0
- je .escrever_cabecalho
- mov esi,cabecalho_museu
- cmp dword [fase],1
- je .escrever_cabecalho
- mov esi,cabecalho_praia
-.escrever_cabecalho:
+ mov eax,[fase]
+ mov esi,[cabecalhos+eax*4]
  mov eax,8
  mov edx,7
  call escrever
 %if ATALHOS_TESTE
  mov esi,indicador_teste
- mov eax,340
+ mov eax,420
  mov edx,7
  call escrever
 %endif
@@ -1235,7 +1245,7 @@ desenhar:
  je .escrever_status
  mov esi,statusB
 .escrever_status:
- mov eax,460
+ mov eax,280
  mov edx,7
  call escrever
  mov eax,[estado]
@@ -1540,6 +1550,10 @@ desenhar_tile_museu:
 desenhar_tile_praia:
  pushad
  mov ebx,paleta_praia
+ jmp desenhar_tile_indexado
+desenhar_tile_icone:
+ pushad
+ mov ebx,ecx
 desenhar_tile_indexado:
  mov edx,16
 .linha:
@@ -1679,7 +1693,10 @@ escrever:
  ret
 
 align 4096,db 0
-cabecalho db '01  PATIFE E PILANTRA   |   DUPLA DO DIAMANTE',0
+cabecalhos dd cabecalho_prisao,cabecalho_museu,cabecalho_praia
+cabecalho_prisao db '01  PATIFE E PILANTRA | PRIS',0xc3,'O',0
+cabecalho_museu db '02  PATIFE E PILANTRA | MUSEU',0
+cabecalho_praia db '03  PATIFE E PILANTRA | PRAIA',0
 statusA db 'A:'
 marcaA db '0','  '
 statusB db 'B:'
@@ -1696,8 +1713,6 @@ homem_preso db 'PILANTRA PRESO! Aproxime a Patife e aperte Espaco para soltar.',
 mulher_presa db 'PATIFE PRESA! Aproxime o Pilantra e aperte Espaco para soltar.',0
 pausa db 'PAUSA   |   Pressione P para continuar.',0
 vitoria db 'FASE CONCLUIDA! Pressione Enter para a proxima fase.',0
-cabecalho_museu db '02   DUPLA DO DIAMANTE   |   MUSEU',0
-cabecalho_praia db '03   DUPLA DO DIAMANTE   |   PRAIA',0
 vitoria_praia db 'PRAIA CONCLUIDA! R para jogar esta fase novamente.',0
 derrota db 'GAME OVER! R para tentar novamente.',0
 derrota_homem db 'GAME OVER: o guarda capturou o Pilantra. R para reiniciar.',0
@@ -1732,14 +1747,7 @@ align 4
 config_fonte_normal dd fonte_pixel,5,7,6,16
 config_fonte_pequena dd fonte_pequena,4,6,5,8
 paleta dd 0,0x111526,0xe2eff9,0xeab685,0x96533c,0xf1bc59,0x398fd8,0x55e3e6,0xaa6488,0x748699
-figuras:
- db 'a'
- dd alavA
- db 'b'
- dd alavB
- db 'E'
- dd entrada
- db 0
+%include "icones.inc"
 figuras_museu:
  db 's'
  dd fossil_museu
@@ -1753,10 +1761,6 @@ figuras_museu:
  dd vitrine_museu
  db 'T'
  dd algema_museu
- db 'b'
- dd alavanca_museu_b
- db 'D'
- dd diamante_museu
  db 'E'
  dd porta_museu
  db 0
@@ -1772,10 +1776,6 @@ figuras_praia:
  dd caixote_praia
  db 'T'
  dd algema_museu
- db 'b'
- dd alavanca_museu_b
- db 'D'
- dd diamante_museu
  db 'E'
  dd porta_museu
  db 0
@@ -1789,15 +1789,9 @@ diamante_pedra: incbin "assets/diamante_pedra.bgra"
 pedra_diamante: incbin "assets/pedra_diamante.bgra"
 algema_esquerda: incbin "assets/algema_esquerda.bgra"
 algema_direita: incbin "assets/algema_direita.bgra"
-grade_esquerda: incbin "assets/grade_esquerda.bgra"
-grade_direita: incbin "assets/grade_direita.bgra"
 piso_esquerdo: incbin "assets/piso_esquerdo.bgra"
 piso_direito: incbin "assets/piso_direito.bgra"
 porta_aberta: incbin "assets/porta_aberta.bgra"
-alavA:
- db '0055000005335000005500000009500000009500009995900555555001111110'
-alavB:
- db '0066000006226000006600000009600000009600009996900666666001111110'
 entrada:
  db '0111111001666610016666100166661001666510016666100111111009999990'
 vigia:
