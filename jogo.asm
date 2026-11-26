@@ -17,6 +17,7 @@
 %define QUADROS_POLICIAL 7
 %define TEMPO_QUEDA_ALGEMA 16
 %define TAMANHO_ATOR 32
+%define TAMANHO_ATOR_TELA 36 ; aumento visual de 12,5%, sem mudar a casa ocupada
 %define BYTES_QUADRO_ATOR (TAMANHO_ATOR*TAMANHO_ATOR*4)
 %define TOTAL_FASES 3
 
@@ -1106,7 +1107,7 @@ desenhar:
  cmp al,'#'
  je .parede_museu
  cmp ebx,5*COLS
- je .planta_museu
+ je .parede_museu
  mov esi,piso_museu
  call desenhar_tile_museu
  cmp al,'D'
@@ -1180,44 +1181,9 @@ desenhar:
  mov esi,diamante_roxo
  jmp .bloco_bgra
 .parede_museu:
- cmp ebx,5
- je .bandeira
- cmp ebx,12
- je .bandeira
- cmp ebx,2
- je .luz
- cmp ebx,4
- je .luz
- cmp ebx,13
- je .luz
- cmp ebx,16
- je .luz
- mov esi,moldura_museu
- cmp ebx,COLS
- jb .tile_museu
- cmp ebx,14*COLS
- jae .tile_museu
- mov eax,ebx
- xor edx,edx
- mov ecx,COLS
- div ecx
- mov esi,coluna_museu
- test edx,edx
- jz .tile_museu
- cmp edx,COLS-1
- je .tile_museu
- mov esi,parede_museu
- jmp .tile_museu
-.planta_museu:
- mov esi,coluna_museu
- call desenhar_tile_museu
- mov esi,vaso_museu
- jmp .tile_museu
-.luz:
- mov esi,luz_museu
- jmp .tile_museu
-.bandeira:
- mov esi,bandeira_museu
+ call selecionar_parede_museu
+ call desenhar_parede_museu_reduzida
+ jmp .proxima_casa
 .tile_museu:
  call desenhar_tile_museu
  jmp .proxima_casa
@@ -1354,6 +1320,24 @@ desenhar:
  ; Exposicoes usam a resolucao final, sem ampliar o sprite reduzido de 32x32.
  cmp dword [fase],1
  jne .exibir_imagem
+ cmp dword [estado],0
+ jne .exposicoes_museu
+ xor ebx,ebx
+.paredes_detalhadas:
+ cmp byte [mapa+ebx],'#'
+ je .pintar_parede
+ cmp ebx,5*COLS              ; coluna com o vaso
+ jne .avancar_parede
+.pintar_parede:
+ call posicionar_ator
+ call converter_posicao_tela
+ call selecionar_parede_museu
+ call desenhar_parede_museu_detalhada
+.avancar_parede:
+ inc ebx
+ cmp ebx,COLS*ROWS
+ jb .paredes_detalhadas
+.exposicoes_museu:
  mov esi,dinossauro_museu_detalhado
  mov edi,pixels_tela+((1+1)*16*2*WIDTH*2+1*16*2)*4
  call desenhar_exposicao_detalhada
@@ -1961,11 +1945,88 @@ converter_posicao_tela:
  ret
 %endmacro
 
-desenhar_ator_reduzido:
+; Amplia o quadro original, centralizado na casa e com os pes na mesma altura.
+; Destino, largura da superficie, tamanho anterior na superficie.
+%macro desenhar_ator_ampliado 3
+ pushad
+ push dword %1
+ sub edi,((%1-%3)*%2+(%1-%3)/2)*4
+ mov ebp,esi
+ xor ebx,ebx
+%%linha:
+ mov eax,ebx
+ imul eax,TAMANHO_ATOR
+ xor edx,edx
+ div dword [esp]
+ imul eax,TAMANHO_ATOR*4
+ lea esi,[ebp+eax]
+ xor ecx,ecx
+%%pixel:
+ mov eax,ecx
+ imul eax,TAMANHO_ATOR
+ xor edx,edx
+ div dword [esp]
+ mov eax,[esi+eax*4]
+ test eax,0xff000000
+ jz %%transparente
+ mov [edi],eax
+%%transparente:
+ add edi,4
+ inc ecx
+ cmp ecx,%1
+ jb %%pixel
+ add edi,(%2-%1)*4
+ inc ebx
+ cmp ebx,%1
+ jb %%linha
+ add esp,4
+ popad
+ ret
+%endmacro
+
+; EBX = casa do Museu. ESI recebe o recorte correspondente da referencia.
+selecionar_parede_museu:
+ mov eax,ebx
+ xor edx,edx
+ mov ecx,COLS
+ div ecx
+ test eax,eax
+ jz .topo
+ cmp eax,ROWS-1
+ je .rodape
+ test edx,edx
+ jz .esquerda
+ cmp edx,COLS-1
+ je .direita
+ mov eax,2*COLS+2*(ROWS-2)
+ jmp .quadro
+.topo:
+ mov eax,edx
+ jmp .quadro
+.rodape:
+ lea eax,[edx+COLS]
+ jmp .quadro
+.esquerda:
+ add eax,2*COLS-1
+ jmp .quadro
+.direita:
+ add eax,2*COLS+ROWS-3
+.quadro:
+ shl eax,12                 ; 32 x 32 pixels BGRA
+ lea esi,[paredes_museu+eax]
+ ret
+
+desenhar_parede_museu_reduzida:
  desenhar_ator_bgra 16,WIDTH,2
 
+desenhar_parede_museu_detalhada:
+ desenhar_ator_bgra 32,WIDTH*2,1
+
+desenhar_ator_reduzido:
+ desenhar_ator_ampliado TAMANHO_ATOR_TELA/2,WIDTH,16
+
 desenhar_ator_detalhado:
- desenhar_ator_bgra TAMANHO_ATOR,WIDTH*2,1
+ desenhar_ator_ampliado TAMANHO_ATOR_TELA,WIDTH*2,32
 
 ; Porta de um bloco, desenhada na resolucao final sem ampliar o sprite 16x16.
 desenhar_porta_tela:
@@ -2201,6 +2262,7 @@ figuras_praia:
 align 4
 pilantra: incbin "assets/pilantra_animacoes.bgra"
 patife: incbin "assets/patife_animacoes.bgra"
+paredes_museu: incbin "assets/paredes_museu.bgra"
 parede: incbin "assets/parede.bgra"
 parede_central: incbin "assets/parede_central.bgra"
 diamante_azul: incbin "assets/diamante_azul.bgra"

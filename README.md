@@ -72,3 +72,5 @@ As exposições do Pensador (linhas 10–11, colunas 4–5) e da mesa (linhas 3�
 A porta azul das três fases usa as referências `assets/porta_azul_fechada_referencia.png` e `assets/porta_azul_aberta_referencia.png`. `python3 tools/gerar_portas.py` gera os estados fechado/aberto, preservando proporção e tamanho de um bloco, com versão detalhada na resolução final da janela. A abertura continua controlada pela alavanca B.
 
 A pasta `assets` mantém os sprites atuais, suas prévias PNG e as referências usadas pelos geradores ou pela documentação do mapa. Versões antigas substituídas foram removidas; os geradores não recriam esses arquivos obsoletos.
+
+A dupla e os policiais são exibidos com 36 × 36 pixels na janela (aumento visual de 12,5% sobre os quadros originais de 32 × 32). A ampliação mantém os pés na mesma altura e centraliza o desenho na casa. O tamanho dos blocos, as posições e as colisões continuam iguais.
