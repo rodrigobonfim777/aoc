@@ -11,8 +11,11 @@
 %define QUADROS_GUARDA 44
 %define INTERVALO_QUADRO 16
 %define MAX_COMANDOS 16
-%define QUADROS_PERSONAGEM 7
-%define BYTES_QUADRO (16*16*4)
+%define QUADROS_PERSONAGEM 4
+%define QUADROS_POLICIAL 7
+%define TEMPO_QUEDA_ALGEMA 16
+%define TAMANHO_ATOR 32
+%define BYTES_QUADRO_ATOR (TAMANHO_ATOR*TAMANHO_ATOR*4)
 %define TOTAL_FASES 3
 
 ; TEMPORARIO: F1-F3 ficam ativos durante o desenvolvimento.
@@ -145,20 +148,23 @@ struc guarda
  .destino resd 1
  .quadros resd 1
  .origem resd 1
+ .direcao resd 1
 endstruc
 pos_guarda dd GUARDA_INICIO
 destino_guarda dd GUARDA_INICIO
 quadros_guarda dd 0
 origem_guarda dd GUARDA_INICIO
+direcao_guarda dd 3        ; direita/esquerda/costas/frente
 pos_guarda_extra dd -1
 destino_guarda_extra dd -1
 quadros_guarda_extra dd 0
 origem_guarda_extra dd -1
+direcao_guarda_extra dd 3
 origem_homem dd LEFT_START
 origem_mulher dd RIGHT_START
 quadros_restantes dd 0
-animacao_homem dd 0,0       ; direcao (direita/esquerda/costas/frente), fase
-animacao_mulher dd 1,0
+animacao_homem dd 0,0,0     ; direcao, fase da caminhada, tempo na algema
+animacao_mulher dd 1,0,0
 tecla_movimento dd 0
 rumo_ativo dd 0
 comandos_inicio dd 0
@@ -367,6 +373,7 @@ reiniciar:
  mov [origem_guarda],edx
  mov [destino_guarda],edx
  mov dword [quadros_guarda],0
+ mov dword [direcao_guarda],3
  mov edx,-1
  cmp dword [fase],2
  jne .guarda_extra
@@ -376,6 +383,7 @@ reiniciar:
  mov [origem_guarda_extra],edx
  mov [destino_guarda_extra],edx
  mov dword [quadros_guarda_extra],0
+ mov dword [direcao_guarda_extra],3
  mov edx,[eax+4]
  mov [homem],edx
  mov [origem_homem],edx
@@ -391,8 +399,10 @@ reiniciar:
  mov dword [quadros_restantes],0
  mov dword [animacao_homem],0
  mov dword [animacao_homem+4],0
+ mov dword [animacao_homem+8],0
  mov dword [animacao_mulher],1
  mov dword [animacao_mulher+4],0
+ mov dword [animacao_mulher+8],0
  mov dword [tecla_movimento],0
  mov dword [rumo_ativo],0
  mov dword [comandos_inicio],0
@@ -466,11 +476,8 @@ atualizar_direcao:
 .gravar:
  mov [edx],ecx
  mov ecx,[edx+4]
- add ecx,3
- cmp ecx,6
- jb .fase
- sub ecx,6
-.fase:
+ add ecx,2
+ and ecx,QUADROS_PERSONAGEM-1
  mov [edx+4],ecx
 .fim:
  ret
@@ -481,6 +488,22 @@ avancar_animacao:
  xor ebx,ebx
  cmp dword [estado],1
  je .fim
+ cmp dword [estado],0
+ jne .movimento
+ test dword [presos],1
+ jz .animar_patife
+ inc dword [animacao_homem+8]
+ test dword [animacao_homem+8],3
+ jnz .animar_patife
+ mov ebx,1
+.animar_patife:
+ test dword [presos],2
+ jz .movimento
+ inc dword [animacao_mulher+8]
+ test dword [animacao_mulher+8],3
+ jnz .movimento
+ mov ebx,1
+.movimento:
  cmp dword [quadros_restantes],0
  je .comando
  dec dword [quadros_restantes]
@@ -527,6 +550,7 @@ atualizar_guarda:
  ret
 
 atualizar_um_guarda:
+ push dword 0               ; redesenha tambem se o guarda acabou de parar
  cmp dword [estado],0
  jne .parado
  cmp dword [ebp+guarda.quadros],0
@@ -534,6 +558,8 @@ atualizar_um_guarda:
  dec dword [ebp+guarda.quadros]
  jnz .transicao
  mov eax,[ebp+guarda.destino]
+ cmp eax,[ebp+guarda.origem]
+ setne byte [esp]
  mov [ebp+guarda.pos],eax
 .iniciar:
  call verificar_captura_guarda
@@ -543,16 +569,23 @@ atualizar_um_guarda:
  mov [ebp+guarda.origem],eax
  mov [ebp+guarda.destino],eax
  call perseguir
+ mov eax,[ebp+guarda.destino]
+ sub eax,[ebp+guarda.origem]
+ jz .duracao
+ call direcao_do_deslocamento
+ mov [ebp+guarda.direcao],ecx
+.duracao:
  mov dword [ebp+guarda.quadros],QUADROS_GUARDA
 .transicao:
  mov eax,[ebp+guarda.origem]
  cmp eax,[ebp+guarda.destino]
  je .parado
 .mudou:
+ add esp,4
  mov eax,1
  ret
 .parado:
- xor eax,eax
+ pop eax
  ret
 
 verificar_captura_guarda:
@@ -636,16 +669,23 @@ tentar_passo:
  ret
 .prender:
  or [presos],ebx
- cmp dword [presos],3
- je .ambos_presos
- ; Patife presa com B desligada tambem encerra a tentativa.
+ cmp esi,homem
+ jne .prender_patife
+ mov dword [animacao_homem+8],0
+ jmp .verificar_derrota
+.prender_patife:
+ mov dword [animacao_mulher+8],0
+.verificar_derrota:
+ ; Se B estiver desligada, a captura da Patife tem prioridade.
  test dword [presos],2
- jz .fim
+ jz .verificar_dupla_presa
  test dword [chaves],2
- jnz .fim
+ jnz .verificar_dupla_presa
  mov eax,4
  jmp encerrar_derrota
-.ambos_presos:
+.verificar_dupla_presa:
+ cmp dword [presos],3
+ jne .fim
  mov eax,3
  jmp encerrar_derrota
 .guarda:
@@ -950,6 +990,20 @@ desenhar:
  add edi,[margem_mapa]
  mov ebx,[indice]
  mov al,[mapa+ebx]
+ cmp al,'T'
+ jne .tema
+ cmp ebx,[homem]
+ jne .armadilha_patife
+ test dword [presos],1
+ jnz .armadilha_ocupada
+.armadilha_patife:
+ cmp ebx,[mulher]
+ jne .tema
+ test dword [presos],2
+ jz .tema
+.armadilha_ocupada:
+ mov al,'.'                 ; o quadro do personagem ja contem a algema
+.tema:
  cmp dword [fase],2
  je .praia
  cmp dword [fase],1
@@ -1185,7 +1239,10 @@ desenhar:
  mov eax,[indice]
  cmp eax,[tamanho_mapa]
  jb .casa
- ; Personagens sao desenhados depois de todas as casas do mapa.
+ ; Na partida, os atores entram na resolucao final. Sob as caixas,
+ ; compoe a versao reduzida primeiro para respeitar o escurecimento.
+ cmp dword [estado],0
+ je .imagem_pronta
  mov dword [indice],0
 .pessoas:
  mov eax,[indice]
@@ -1198,12 +1255,12 @@ desenhar:
  lea edi,[pixels+edi*4]
  add edi,[margem_mapa]
  mov ebx,[indice]
- mov esi,vigia
  cmp ebx,[destino_guarda]
  jne .verificar_guarda_extra
  push edi
  mov eax,[origem_guarda]
  mov edx,[quadros_guarda]
+ mov ecx,[direcao_guarda]
  call .desenhar_guarda
  pop edi
 .verificar_guarda_extra:
@@ -1212,6 +1269,7 @@ desenhar:
  push edi
  mov eax,[origem_guarda_extra]
  mov edx,[quadros_guarda_extra]
+ mov ecx,[direcao_guarda_extra]
  call .desenhar_guarda
  pop edi
 .jogadores:
@@ -1223,8 +1281,9 @@ desenhar:
  je .mulher
  jmp .proxima
 .desenhar_guarda:
+ call selecionar_quadro_guarda
  call interpolar_guarda
- call desenhar_ator
+ call desenhar_ator_reduzido
  ret
 .homem:
  mov edx,animacao_homem
@@ -1236,22 +1295,7 @@ desenhar:
 .ator:
  call selecionar_quadro
  call interpolar_posicao
- call desenhar_personagem
- cmp ebx,[homem]
- jne .algema_mulher
- test dword [presos],1
- jnz .algemado
-.algema_mulher:
- cmp ebx,[mulher]
- jne .proxima
- test dword [presos],2
- jz .proxima
-.algemado:
- bloco 3,9,4,4,0x111526
- bloco 9,9,4,4,0x111526
- bloco 4,10,2,2,0xe2eff9
- bloco 10,10,2,2,0xe2eff9
- bloco 6,10,4,1,0x748699
+ call desenhar_ator_reduzido
 .proxima:
  inc dword [indice]
  mov eax,[indice]
@@ -1298,6 +1342,10 @@ desenhar:
  mov edi,pixels_tela+((12+1)*16*2*WIDTH*2+16*16*2)*4
  call desenhar_exposicao_detalhada
 .exibir_imagem:
+ cmp dword [estado],0
+ jne .enviar_imagem
+ call desenhar_atores_tela
+.enviar_imagem:
  pcall SetDIBitsToDevice,[dc],0,0,WIDTH*2,HEIGHT*2,0,0,0,HEIGHT*2,pixels_tela,bmi,0
  pcall GetStockObject,16
  pcall SelectObject,[dc],eax
@@ -1624,12 +1672,6 @@ sprite:
  popad
  ret
 
-; Os atores usam 16x16 pixels para detalhar rostos, roupas e acessorios.
-desenhar_ator:
- pushad
- mov ebx,paleta
- jmp desenhar_tile_indexado
-
 desenhar_tile_museu:
  pushad
  mov ebx,paleta_museu
@@ -1666,9 +1708,16 @@ desenhar_tile_indexado:
  ret
 
 ; ESI = atlas, EDX = direcao/fase, EAX = origem, EBX = destino.
-; Cada direcao tem idle + seis passos; cada casa usa metade do ciclo.
+; Cada direcao tem quatro quadros. As duas ultimas linhas sao queda e algema.
 selecionar_quadro:
  push eax
+ mov ecx,1
+ cmp edx,animacao_homem
+ je .testar_algema
+ mov ecx,2
+.testar_algema:
+ test [presos],ecx
+ jnz .algema
  mov ecx,[edx]
  imul ecx,QUADROS_PERSONAGEM
  cmp dword [quadros_restantes],0
@@ -1677,7 +1726,7 @@ selecionar_quadro:
  je .endereco
  mov eax,QUADROS_PASSO
  sub eax,[quadros_restantes]
- imul eax,3
+ shl eax,1
  push ecx
  push edx
  mov ecx,QUADROS_PASSO
@@ -1686,16 +1735,67 @@ selecionar_quadro:
  pop edx
  pop ecx
  add eax,[edx+4]
- cmp eax,6
- jb .fase
- sub eax,6
-.fase:
- inc eax
+ and eax,QUADROS_PERSONAGEM-1
  add ecx,eax
+ jmp .endereco
+.algema:
+ mov ecx,[edx+8]
+ cmp ecx,TEMPO_QUEDA_ALGEMA
+ jae .preso
+ cmp dword [estado],3
+ je .derrota_imediata
+ shr ecx,2
+ add ecx,4*QUADROS_PERSONAGEM
+ jmp .endereco
+.derrota_imediata:
+ mov ecx,TEMPO_QUEDA_ALGEMA
+.preso:
+ sub ecx,TEMPO_QUEDA_ALGEMA
+ shr ecx,3
+ and ecx,QUADROS_PERSONAGEM-1
+ add ecx,5*QUADROS_PERSONAGEM
 .endereco:
- imul ecx,BYTES_QUADRO
+ imul ecx,BYTES_QUADRO_ATOR
  add esi,ecx
  pop eax
+ ret
+
+; EAX = origem, EBX = destino, ECX = direcao, EDX = quadros restantes.
+selecionar_quadro_guarda:
+ push eax
+ push edx
+ imul esi,ecx,QUADROS_POLICIAL
+ cmp eax,ebx
+ je .endereco
+ test edx,edx
+ jz .endereco
+ mov eax,QUADROS_GUARDA
+ sub eax,edx
+ imul eax,6
+ xor edx,edx
+ mov ecx,QUADROS_GUARDA
+ div ecx
+ lea esi,[esi+eax+1]
+.endereco:
+ imul esi,BYTES_QUADRO_ATOR
+ add esi,policial
+ pop edx
+ pop eax
+ ret
+
+; EAX = deslocamento de uma casa. Devolve o indice da direcao em ECX.
+direcao_do_deslocamento:
+ xor ecx,ecx
+ cmp eax,1
+ je .fim
+ inc ecx
+ cmp eax,-1
+ je .fim
+ inc ecx
+ cmp eax,-COLS
+ je .fim
+ inc ecx
+.fim:
  ret
 
 ; Interpola a mesma distancia de 16 pixels com tempos independentes.
@@ -1747,6 +1847,100 @@ interpolar_casa:
  pop eax
  ret
 
+desenhar_atores_tela:
+ pushad
+ mov ebp,pos_guarda
+ call desenhar_policial_tela
+ cmp dword [pos_guarda_extra],-1
+ je .dupla
+ mov ebp,pos_guarda_extra
+ call desenhar_policial_tela
+.dupla:
+ mov ebx,[homem]
+ call posicionar_ator
+ mov eax,[origem_homem]
+ mov esi,pilantra
+ mov edx,animacao_homem
+ call desenhar_jogador_tela
+ mov ebx,[mulher]
+ call posicionar_ator
+ mov eax,[origem_mulher]
+ mov esi,patife
+ mov edx,animacao_mulher
+ call desenhar_jogador_tela
+ popad
+ ret
+
+; EBX = casa, EDI = endereco do pixel no mapa em resolucao logica.
+posicionar_ator:
+ mov eax,ebx
+ xor edx,edx
+ mov ecx,COLS
+ div ecx
+ imul eax,WIDTH*16
+ shl edx,4
+ lea edi,[eax+edx+WIDTH*16]
+ lea edi,[pixels+edi*4]
+ add edi,[margem_mapa]
+ ret
+
+desenhar_policial_tela:
+ mov ebx,[ebp+guarda.destino]
+ call posicionar_ator
+ mov eax,[ebp+guarda.origem]
+ mov edx,[ebp+guarda.quadros]
+ mov ecx,[ebp+guarda.direcao]
+ call selecionar_quadro_guarda
+ call interpolar_guarda
+ call converter_posicao_tela
+ jmp desenhar_ator_detalhado
+
+desenhar_jogador_tela:
+ call selecionar_quadro
+ call interpolar_posicao
+ call converter_posicao_tela
+ jmp desenhar_ator_detalhado
+
+; Converte a coordenada interpolada para a superficie em escala 2x.
+converter_posicao_tela:
+ sub edi,pixels
+ mov eax,edi
+ xor edx,edx
+ mov ecx,WIDTH*4
+ div ecx
+ imul eax,WIDTH*16
+ lea edi,[pixels_tela+eax+edx*2]
+ ret
+
+; Tamanho do destino, largura da superficie e passo no sprite original.
+%macro desenhar_ator_bgra 3
+ pushad
+ mov edx,%1
+%%linha:
+ mov ecx,%1
+%%pixel:
+ mov eax,[esi]
+ add esi,%3*4
+ test eax,0xff000000
+ jz %%transparente
+ mov [edi],eax
+%%transparente:
+ add edi,4
+ loop %%pixel
+ add esi,(%3-1)*TAMANHO_ATOR*4
+ add edi,(%2-%1)*4
+ dec edx
+ jnz %%linha
+ popad
+ ret
+%endmacro
+
+desenhar_ator_reduzido:
+ desenhar_ator_bgra 16,WIDTH,2
+
+desenhar_ator_detalhado:
+ desenhar_ator_bgra TAMANHO_ATOR,WIDTH*2,1
+
 ; Exposicoes opacas de 64x64, compostas com o piso e fora da caixa central.
 desenhar_exposicao_detalhada:
  pushad
@@ -1768,9 +1962,8 @@ desenhar_exposicao_detalhada:
  popad
  ret
 
-; Sprites da referencia: BGRA 16x16, inteiramente dentro de uma casa.
+; Blocos BGRA de 16x16, inteiramente dentro de uma casa.
 desenhar_bgra:
-desenhar_personagem:
  pushad
  mov edx,16
 .linha:
@@ -1827,7 +2020,7 @@ derrota db 'GAME OVER! R para tentar novamente.',0
 derrota_homem db 'GAME OVER: o guarda capturou o Pilantra. R para reiniciar.',0
 derrota_mulher db 'GAME OVER: o guarda capturou a Patife. R para reiniciar.',0
 derrota_algemas db 'GAME OVER: os dois ficaram presos nas algemas. R para reiniciar.',0
-derrota_porta db 'GAME OVER: Patife presa e porta azul fechada. R para reiniciar.',0
+derrota_porta db 'GAME OVER: Patife presa nas algemas. R para reiniciar.',0
 avisos_derrota dd derrota,derrota_homem,derrota_mulher,derrota_algemas,derrota_porta
 titulo_game_over db 'GAME OVER',0
 titulo_fase_concluida db 'FASE CONCLUIDA',0
@@ -1847,7 +2040,7 @@ causa_generica db 'A TENTATIVA TERMINOU',0
 causa_homem db 'O GUARDA CAPTUROU O PILANTRA',0
 causa_mulher db 'O GUARDA CAPTUROU A PATIFE',0
 causa_algemas db 'OS DOIS FICARAM PRESOS NAS ALGEMAS',0
-causa_porta db 'PATIFE PRESA E PORTA AZUL FECHADA',0
+causa_porta db 'PATIFE PRESA NAS ALGEMAS',0
 game_over_reiniciar db 'APERTE R PARA REINICIAR',0
 game_over_novamente db 'E JOGAR NOVAMENTE',0
 fonte_pixel: incbin "assets/fonte5x7.bin"
@@ -1911,23 +2104,7 @@ piso_direito: incbin "assets/piso_direito.bgra"
 porta_aberta: incbin "assets/porta_aberta.bgra"
 entrada:
  db '0111111001666610016666100166661001666510016666100111111009999990'
-vigia:
- db '0000011111100000'
- db '0000166666610000'
- db '0001666655661000'
- db '0000111155111100'
- db '0000433333340000'
- db '0000413113140000'
- db '0000433443340000'
- db '0000044334400000'
- db '0001166226611000'
- db '0016616556166100'
- db '0016311661163100'
- db '0003311551133000'
- db '0000016666100000'
- db '0000016106100000'
- db '0000019109100000'
- db '0000199101991000'
+policial: incbin "assets/policial_animacoes.bgra"
 align 512,db 0
 file_end:
 absolute file_end
