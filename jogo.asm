@@ -5,7 +5,9 @@
 %define WIDTH 304
 %define HEIGHT 276
 %define LEFT_START (13*COLS+1)
+; Casa livre junto ao canto superior direito (evita a algema/palmeira da linha 1).
 %define GUARDA_INICIO (2*COLS+17)
+%define GUARDA_PRAIA_ESQUERDA (2*COLS+1)
 %define RIGHT_START (13*COLS+17)
 %define QUADROS_PASSO 12
 %define QUADROS_GUARDA 44
@@ -50,6 +52,17 @@
  je %2
  cmp %1,'7'
  je %2
+ cmp dword [fase],1
+ jne %%outras_decoracoes
+ cmp %1,'I'
+ jb %%outras_decoracoes
+ cmp %1,'L'
+ jbe %2
+ cmp %1,'N'
+ jb %%outras_decoracoes
+ cmp %1,'Q'
+ jbe %2
+%%outras_decoracoes:
  cmp %1,'p'
  je %2
  cmp %1,'v'
@@ -86,21 +99,22 @@ mapa_inicial:
  db '#H.....#.E.......M#'
  db '###################'
 
-; Museu: s123 = fossil 2x2, 4567 = esfinge 2x2; p quadro, v vaso, c cordao.
+; Museu: s123 fossil, 4567 esfinge, IJKL Pensador, NOPQ mesa (todos 2x2).
+; Paredes, cordoes, algemas e alavanca seguem a referencia do museu.
 mapa_museu:
  db '###################'
  db '#s1......D........#'
- db '#23....#.#......Tp#'
- db '#..#c#.#.#.#c#.#..#'
- db '#..###.#.#.###.#.##'
- db 'v....#T..#V.......#'
- db '#.##.###.#.#.#.#..#'
- db '#........#c#.#b#..#'
- db '#..#########.###..#'
- db '#.T......#....T...#'
- db '#.######.#.#.#.#..#'
- db '#........#........#'
- db '#....c...#.###.#45#'
+ db '#23..#.#.#.......V#'
+ db '#..#c#.#.#.....NO.#'
+ db '#..###.#.#.#c#.PQ.#'
+ db 'v....#T..#.###.cc.#'
+ db '#.##.###.#........#'
+ db '#........#.#.#.#..#'
+ db '#..#######c#.#b#..#'
+ db '#.#.....T###.###..#'
+ db '#.#.IJ#..#....T...#'
+ db '#...KL#.c#.#.#.#..#'
+ db '#..###T..#.###.#45#'
  db '#p.H.....E.....M67#'
  db '###################'
 
@@ -108,11 +122,11 @@ mapa_museu:
 mapa_praia:
  db '###################'
  db '#u.......D.....q.u#'
- db '#..###...#.###....#'
+ db '#V.###...#.###...V#'
  db '#..#T#.#.#..#.....#'
- db '#.#.V..#.##.#..k..#'
+ db '#.#....#.##.#..k..#'
  db '#.#f.#...#..###.#.#'
- db '#.####.###.....V#.#'
+ db '#.####.###......#.#'
  db '#T.....#.#.#.#....#'
  db '#.####.#.#.#b#.#T.#'
  db '#.#......#.###.#..#'
@@ -125,8 +139,8 @@ mapa_praia:
 ; Mapa, posicoes de Pilantra/Patife/guarda, tamanho, porta, chaves e margem vertical.
 fases:
  dd mapa_inicial,LEFT_START,RIGHT_START,GUARDA_INICIO,15*COLS,13*COLS+9,3,0
- dd mapa_museu,13*COLS+3,13*COLS+15,5*COLS+10,15*COLS,13*COLS+9,2,0
- dd mapa_praia,LEFT_START,RIGHT_START,4*COLS+4,15*COLS,13*COLS+9,2,0
+ dd mapa_museu,13*COLS+3,13*COLS+15,GUARDA_INICIO,15*COLS,13*COLS+9,2,0
+ dd mapa_praia,LEFT_START,RIGHT_START,GUARDA_INICIO,15*COLS,13*COLS+9,2,0
 fase dd 0                  ; 0 cadeia, 1 museu, 2 praia
 tamanho_mapa dd 0
 pos_porta dd 0
@@ -377,7 +391,7 @@ reiniciar:
  mov edx,-1
  cmp dword [fase],2
  jne .guarda_extra
- mov edx,6*COLS+15
+ mov edx,GUARDA_PRAIA_ESQUERDA
 .guarda_extra:
  mov [pos_guarda_extra],edx
  mov [origem_guarda_extra],edx
@@ -630,6 +644,16 @@ tentar_passo:
  call virar_personagem      ; vira antes de testar a parede ou outro obstaculo
  mov eax,[esi]
  add eax,edx
+ ; O parceiro ocupa a casa mesmo quando esta preso. O resgate usa Espaco.
+ cmp esi,homem
+ jne .verificar_homem
+ cmp eax,[mulher]
+ je .fim
+ jmp .verificar_terreno
+.verificar_homem:
+ cmp eax,[homem]
+ je .fim
+.verificar_terreno:
  mov cl,[mapa+eax]
  bloquear_casa_solida cl,.fim
  cmp cl,'E'
@@ -650,24 +674,6 @@ tentar_passo:
  je .guarda
  cmp cl,'T'
  jne .fim
- ; Entrar na algema ocupada pelo parceiro preso e um resgate.
- ; O socorrista nao deve ser preso pela mesma casa nessa entrada.
- mov ecx,homem
- cmp esi,mulher
- je .parceiro
- mov ecx,mulher
-.parceiro:
- cmp eax,[ecx]
- jne .prender
- mov ecx,ebx
- xor ecx,3                  ; bit do outro personagem
- test [presos],ecx
- jz .prender
- mov byte [mapa+eax],'.'     ; a algema usada desaparece apos o resgate
- not ecx
- and [presos],ecx
- ret
-.prender:
  or [presos],ebx
  cmp esi,homem
  jne .prender_patife
@@ -1034,13 +1040,11 @@ desenhar:
  je .alavanca_b
  cmp al,'E'
  jne .proxima_casa
+.porta_azul:
+ mov esi,porta_azul_fechada
  test dword [chaves],2
- jnz .porta_aberta
- mov esi,entrada
- call sprite
- jmp .proxima_casa
-.porta_aberta:
- mov esi,porta_aberta
+ jz .bloco_bgra
+ mov esi,porta_azul_aberta
  jmp .bloco_bgra
 .diamante:
  mov esi,pedra_diamante
@@ -1111,6 +1115,15 @@ desenhar:
  je .alavanca_b
  cmp al,'s'
  je .dinossauro_museu
+ cmp al,'I'
+ jb .figuras_antigas_museu
+ cmp al,'L'
+ jbe .pensador_museu
+ cmp al,'N'
+ jb .figuras_antigas_museu
+ cmp al,'Q'
+ jbe .mesa_museu
+.figuras_antigas_museu:
  cmp al,'1'
  jb .figuras_museu
  cmp al,'3'
@@ -1130,10 +1143,7 @@ desenhar:
  mov esi,[esi+1]
  cmp al,'E'
  jne .tile_museu
- test dword [chaves],2
- jz .tile_museu
- mov esi,porta_museu_aberta
- jmp .tile_museu
+ jmp .porta_azul
 .dinossauro_museu:
  mov esi,dinossauro_museu
  cmp al,'s'
@@ -1147,6 +1157,18 @@ desenhar:
  mov esi,esfinge_museu
  movzx eax,al
  sub eax,'4'
+ shl eax,10
+ add esi,eax
+ jmp .bloco_bgra
+.pensador_museu:
+ mov esi,pensador_museu
+ sub al,'I'
+ jmp .bloco_exposicao_museu
+.mesa_museu:
+ mov esi,mesa_museu
+ sub al,'N'
+.bloco_exposicao_museu:
+ movzx eax,al
  shl eax,10
  add esi,eax
  jmp .bloco_bgra
@@ -1221,10 +1243,7 @@ desenhar:
  mov esi,[esi+1]
  cmp al,'E'
  jne .tile_praia
- test dword [chaves],2
- jz .tile_praia
- mov esi,porta_museu_aberta
- jmp .tile_praia
+ jmp .porta_azul
 .diamante_na_praia:
  mov esi,pedestal_praia
  call desenhar_tile_praia
@@ -1341,7 +1360,14 @@ desenhar:
  mov esi,esfinge_museu_detalhada
  mov edi,pixels_tela+((12+1)*16*2*WIDTH*2+16*16*2)*4
  call desenhar_exposicao_detalhada
+ mov esi,pensador_museu_detalhado
+ mov edi,pixels_tela+((10+1)*16*2*WIDTH*2+4*16*2)*4
+ call desenhar_nova_exposicao_museu
+ mov esi,mesa_museu_detalhado
+ mov edi,pixels_tela+((3+1)*16*2*WIDTH*2+15*16*2)*4
+ call desenhar_nova_exposicao_museu
 .exibir_imagem:
+ call desenhar_porta_tela
  cmp dword [estado],0
  jne .enviar_imagem
  call desenhar_atores_tela
@@ -1941,6 +1967,96 @@ desenhar_ator_reduzido:
 desenhar_ator_detalhado:
  desenhar_ator_bgra TAMANHO_ATOR,WIDTH*2,1
 
+; Porta de um bloco, desenhada na resolucao final sem ampliar o sprite 16x16.
+desenhar_porta_tela:
+ pushad
+ mov eax,[pos_porta]
+ xor edx,edx
+ mov ecx,COLS
+ div ecx
+ inc eax
+ imul eax,WIDTH*16*4
+ shl edx,5
+ add eax,edx
+ shl eax,2
+ mov edx,[margem_mapa]
+ shl edx,2
+ add eax,edx
+ lea edi,[pixels_tela+eax]
+ mov esi,porta_azul_fechada_detalhada
+ test dword [chaves],2
+ jz .desenhar
+ mov esi,porta_azul_aberta_detalhada
+.desenhar:
+ mov edx,32
+.linha:
+ mov ecx,32
+.pixel:
+ lodsd
+ test eax,0xff000000
+ jz .proximo
+ cmp dword [estado],0
+ je .gravar
+ and eax,0x00fefefe
+ shr eax,1
+.gravar:
+ mov [edi],eax
+.proximo:
+ add edi,4
+ loop .pixel
+ add edi,(WIDTH*2-32)*4
+ dec edx
+ jnz .linha
+ popad
+ ret
+
+; Novas figuras transparentes de 64x64; respeitam o painel de pausa/fim.
+desenhar_nova_exposicao_museu:
+ pushad
+ mov edx,64
+.linha:
+ mov eax,edi
+ sub eax,pixels_tela
+ xor ebx,ebx
+ push edx
+ xor edx,edx
+ mov ecx,WIDTH*2*4
+ div ecx
+ mov ebp,eax              ; Y na tela
+ mov ebx,edx
+ shr ebx,2                ; X na tela
+ pop edx
+ mov ecx,64
+.pixel:
+ lodsd
+ test eax,0xff000000
+ jz .proximo
+ cmp dword [estado],0
+ je .gravar
+ ; Caixa e sombra: X 14..292, Y 80..199 na resolucao logica.
+ cmp ebp,80*2
+ jb .escurecer
+ cmp ebp,199*2
+ jae .escurecer
+ cmp ebx,14*2
+ jb .escurecer
+ cmp ebx,292*2
+ jb .proximo
+.escurecer:
+ and eax,0x00fefefe
+ shr eax,1
+.gravar:
+ mov [edi],eax
+.proximo:
+ add edi,4
+ inc ebx
+ loop .pixel
+ add edi,(WIDTH*2-64)*4
+ dec edx
+ jnz .linha
+ popad
+ ret
+
 ; Exposicoes opacas de 64x64, compostas com o piso e fora da caixa central.
 desenhar_exposicao_detalhada:
  pushad
@@ -2087,7 +2203,6 @@ pilantra: incbin "assets/pilantra_animacoes.bgra"
 patife: incbin "assets/patife_animacoes.bgra"
 parede: incbin "assets/parede.bgra"
 parede_central: incbin "assets/parede_central.bgra"
-diamante_pedra: incbin "assets/diamante_pedra.bgra"
 diamante_azul: incbin "assets/diamante_azul.bgra"
 diamante_roxo: incbin "assets/diamante_roxo.bgra"
 diamante_verde: incbin "assets/diamante_verde.bgra"
@@ -2096,14 +2211,19 @@ dinossauro_museu: incbin "assets/dinossauro_museu.bgra"
 esfinge_museu: incbin "assets/esfinge_museu.bgra"
 dinossauro_museu_detalhado: incbin "assets/dinossauro_museu_detalhado.bgra"
 esfinge_museu_detalhada: incbin "assets/esfinge_museu_detalhado.bgra"
+pensador_museu: incbin "assets/pensador_museu.bgra"
+mesa_museu: incbin "assets/mesa_museu.bgra"
+pensador_museu_detalhado: incbin "assets/pensador_museu_detalhado.bgra"
+mesa_museu_detalhado: incbin "assets/mesa_museu_detalhado.bgra"
+porta_azul_fechada: incbin "assets/porta_azul_fechada.bgra"
+porta_azul_aberta: incbin "assets/porta_azul_aberta.bgra"
+porta_azul_fechada_detalhada: incbin "assets/porta_azul_fechada_detalhado.bgra"
+porta_azul_aberta_detalhada: incbin "assets/porta_azul_aberta_detalhado.bgra"
 pedra_diamante: incbin "assets/pedra_diamante.bgra"
 algema_esquerda: incbin "assets/algema_esquerda.bgra"
 algema_direita: incbin "assets/algema_direita.bgra"
 piso_esquerdo: incbin "assets/piso_esquerdo.bgra"
 piso_direito: incbin "assets/piso_direito.bgra"
-porta_aberta: incbin "assets/porta_aberta.bgra"
-entrada:
- db '0111111001666610016666100166661001666510016666100111111009999990'
 policial: incbin "assets/policial_animacoes.bgra"
 align 512,db 0
 file_end:
