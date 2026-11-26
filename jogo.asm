@@ -9,7 +9,7 @@
 %define GUARDA_INICIO (2*COLS+17)
 %define GUARDA_PRAIA_ESQUERDA (2*COLS+1)
 %define RIGHT_START (13*COLS+17)
-%define QUADROS_PASSO 7
+%define QUADROS_PASSO 12
 %define QUADROS_GUARDA 40
 %define INTERVALO_QUADRO 16
 %define MAX_COMANDOS 16
@@ -451,9 +451,10 @@ iniciar_passo:
  jne .limpar_aviso
  mov eax,[origem_mulher]
  cmp eax,[mulher]
- je .fim                    ; parede: a proxima direcao pode entrar imediatamente
+ je .animacao
 .limpar_aviso:
  mov dword [aviso_coleta],0
+.animacao:
  mov eax,[origem_homem]
  mov ebx,[homem]
  mov edx,animacao_homem
@@ -462,8 +463,7 @@ iniciar_passo:
  mov ebx,[mulher]
  mov edx,animacao_mulher
  call atualizar_direcao
- mov dword [quadros_restantes],QUADROS_PASSO-1 ; primeiro deslocamento ja neste desenho
-.fim:
+ mov dword [quadros_restantes],QUADROS_PASSO
  ret
 
 ; EAX = origem, EBX = destino, EDX = dados de animacao do personagem.
@@ -1252,7 +1252,7 @@ desenhar:
 .ator:
  call selecionar_quadro
  call interpolar_posicao
- call desenhar_bloco32_reduzido
+ call desenhar_ator_reduzido
 .proxima:
  inc dword [indice]
  mov eax,[indice]
@@ -1923,7 +1923,7 @@ desenhar_jogador_tela:
  call selecionar_quadro
  call interpolar_posicao
  call converter_posicao_tela
- jmp desenhar_bloco32_detalhado
+ jmp desenhar_ator_detalhado
 
 ; Converte a coordenada interpolada para a superficie em escala 2x.
 converter_posicao_tela:

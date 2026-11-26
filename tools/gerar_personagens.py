@@ -71,16 +71,6 @@ def normalize_rows(rows):
             yield canvas
 
 
-def fit_to_tile(frame, standing):
-    sprite = frame.crop(frame.getbbox())
-    width = 24
-    height = 26 if standing else max(1, round(sprite.height * 26 / SIZE))
-    sprite = sprite.resize((width, height), Image.Resampling.NEAREST)
-    tile = Image.new('RGBA', (SIZE, SIZE))
-    tile.paste(sprite, ((SIZE - width) // 2, SIZE - height))
-    return tile
-
-
 def main():
     motion = read_sheet('personagens-movimento-referencia.png', MOTION_ROWS, MOTION_COLUMNS)
     trap = read_sheet('personagens-algemas-referencia.png', TRAP_ROWS, TRAP_COLUMNS)
@@ -88,8 +78,7 @@ def main():
         # Ordem do jogo: direita, esquerda, costas, frente, queda, preso.
         directions = [walking[index] for index in (3, 2, 0, 1)]
         trap_rows = [trapped[1], trapped[0]]
-        frames = [fit_to_tile(frame, True) for frame in normalize_rows(directions)]
-        frames.extend(fit_to_tile(frame, False) for frame in normalize_rows(trap_rows))
+        frames = list(normalize_rows(directions)) + list(normalize_rows(trap_rows))
         atlas = Image.new('RGBA', (4 * SIZE, 6 * SIZE))
         for index, frame in enumerate(frames):
             atlas.paste(frame, ((index % 4) * SIZE, (index // 4) * SIZE))
