@@ -6,9 +6,9 @@
 %define HEIGHT 276
 %define LEFT_START (13*COLS+1)
 %define GUARDA_INICIO (2*COLS+17)
-%define RITMO_GUARDA 5
 %define RIGHT_START (13*COLS+17)
-%define QUADROS_PASSO 8
+%define QUADROS_PASSO 12
+%define QUADROS_GUARDA 44
 %define INTERVALO_QUADRO 16
 %define MAX_COMANDOS 16
 %define QUADROS_PERSONAGEM 7
@@ -43,7 +43,8 @@ diamante_coletado dd 0
 estado dd 0                 ; 0 jogando, 1 pausa, 2 vitoria, 3 capturados
 motivo_derrota dd 0         ; 1/2 guarda pegou homem/mulher; 3 ambos presos; 4 porta
 pos_guarda dd GUARDA_INICIO
-turnos dd 0
+destino_guarda dd GUARDA_INICIO
+quadros_guarda dd 0
 origem_homem dd LEFT_START
 origem_mulher dd RIGHT_START
 origem_guarda dd GUARDA_INICIO
@@ -136,6 +137,10 @@ procedimento:
  cmp dword [ebp+16],1
  jne .padrao
  call avancar_animacao
+ push eax
+ call atualizar_guarda
+ pop edx
+ or eax,edx
  test eax,eax
  jz .zero
  pcall InvalidateRect,[ebp+8],0,0
@@ -217,7 +222,8 @@ reiniciar:
  pop edi
  pop esi
  mov dword [pos_guarda],GUARDA_INICIO
- mov dword [turnos],0
+ mov dword [destino_guarda],GUARDA_INICIO
+ mov dword [quadros_guarda],0
  mov dword [homem],LEFT_START
  mov dword [mulher],RIGHT_START
  mov dword [chaves],0
@@ -260,8 +266,6 @@ iniciar_passo:
  mov [origem_homem],eax
  mov eax,[mulher]
  mov [origem_mulher],eax
- mov eax,[pos_guarda]
- mov [origem_guarda],eax
  call executar_passo
  mov eax,[origem_homem]
  mov ebx,[homem]
@@ -275,7 +279,7 @@ iniciar_passo:
  ret
 
 ; EAX = origem, EBX = destino, EDX = dados de animacao do personagem.
-; Quem ficou bloqueado ou preso conserva a pose, sem caminhar no lugar.
+; A fase de caminhada so avanca quando houve deslocamento.
 atualizar_direcao:
  mov ecx,ebx
  sub ecx,eax
@@ -343,6 +347,54 @@ avancar_animacao:
  pop ebx
  ret
 
+; Atualiza a patrulha a cada tick, mesmo com a dupla parada.
+; Posicao logica so e confirmada ao terminar a transicao visual.
+atualizar_guarda:
+ pushad
+ cmp dword [estado],0
+ jne .parado
+ cmp dword [quadros_guarda],0
+ je .iniciar
+ dec dword [quadros_guarda]
+ jnz .transicao
+ mov eax,[destino_guarda]
+ mov [pos_guarda],eax
+.iniciar:
+ call verificar_captura_guarda
+ cmp dword [estado],0
+ jne .mudou
+ mov eax,[pos_guarda]
+ mov [origem_guarda],eax
+ mov [destino_guarda],eax
+ call perseguir
+ mov dword [quadros_guarda],QUADROS_GUARDA
+.transicao:
+ mov eax,[origem_guarda]
+ cmp eax,[destino_guarda]
+ je .parado
+.mudou:
+ mov dword [esp+28],1
+ jmp .fim
+.parado:
+ mov dword [esp+28],0
+.fim:
+ popad
+ ret
+
+verificar_captura_guarda:
+ mov eax,[pos_guarda]
+ cmp eax,[homem]
+ je .homem
+ cmp eax,[mulher]
+ jne .fim
+ mov eax,2
+ jmp encerrar_derrota
+.homem:
+ mov eax,1
+ jmp encerrar_derrota
+.fim:
+ ret
+
 executar_passo:
  mov esi,homem
  call tentar_passo
@@ -357,13 +409,6 @@ executar_passo:
 .direita:
  mov esi,mulher
  call tentar_passo
- cmp dword [estado],0
- jne .fim
- inc dword [turnos]
- cmp dword [turnos],RITMO_GUARDA
- jb .fim
- mov dword [turnos],0
- call perseguir
 .fim:
  ret
 
@@ -375,12 +420,17 @@ tentar_passo:
 .verificar_preso:
  test [presos],ebx
  jnz .fim
+ call virar_personagem      ; vira antes de testar a parede ou outro obstaculo
  mov eax,[esi]
  add eax,edx
  mov cl,[mapa+eax]
  cmp cl,'#'
  je .fim
  cmp cl,'D'                 ; o diamante e alcancado pelas laterais
+ je .fim
+ cmp cl,'a'                 ; alavancas sao objetos, nao casas transitaveis
+ je .fim
+ cmp cl,'b'
  je .fim
  cmp cl,'E'
  jne .grade
@@ -439,6 +489,32 @@ tentar_passo:
 .fim:
  ret
 
+; ESI = personagem, EDX = comando (ja espelhado para a Patife).
+; Conserva o comando e a mascara de prisao usados por tentar_passo.
+virar_personagem:
+ push eax
+ push ecx
+ mov ecx,animacao_homem
+ cmp esi,homem
+ je .direcao
+ mov ecx,animacao_mulher
+.direcao:
+ xor eax,eax
+ cmp edx,1
+ je .gravar
+ mov eax,1
+ cmp edx,-1
+ je .gravar
+ mov eax,2
+ cmp edx,-COLS
+ je .gravar
+ mov eax,3
+.gravar:
+ mov [ecx],eax
+ pop ecx
+ pop eax
+ ret
+
 ; Registra a primeira causa; a caixa e desenhada dentro do jogo.
 encerrar_derrota:
  cmp dword [estado],0
@@ -458,17 +534,25 @@ interagir:
  jmp verificar_fuga
 
 ; Qualquer um dos dois personagens pode acionar A ou B.
-; EAX = posicao do personagem no mapa.
+; EAX = posicao do personagem. Alcanca a alavanca a esquerda, direita ou abaixo:
+; assim, o personagem pode estar ao lado ou no bloco acima dela.
 acionar_alavanca:
- cmp byte [mapa+eax],'a'
+ mov ecx,1                  ; direcoes: -1, +1, +COLS (sem diagonais)
+.vizinho:
+ mov edx,eax
+ add edx,[direcoes+ecx*4]
+ cmp byte [mapa+edx],'a'
  je .a
- cmp byte [mapa+eax],'b'
- jne .fim
+ cmp byte [mapa+edx],'b'
+ jne .proximo
  or dword [chaves],2
- ret
+ jmp .proximo
 .a:
  or dword [chaves],1
-.fim:
+.proximo:
+ inc ecx
+ cmp ecx,4
+ jb .vizinho
  ret
 
 ; So o parceiro livre pode soltar a algema, de uma casa vizinha (sem diagonais).
@@ -575,7 +659,7 @@ perto_da_porta:
  ret
 
 ; Busca em largura: cada casa entra uma vez na fila. O primeiro ladrao
-; encontrado e o mais proximo pelos corredores. A porta E aberta liga as metades.
+; encontrado e o mais proximo pelos corredores. Planeja o destino, sem antecipar a captura.
 perseguir:
  mov edi,anterior
  mov ecx,COLS*ROWS
@@ -608,6 +692,10 @@ perseguir:
  je .proximo
  cmp dl,'D'
  je .proximo
+ cmp dl,'a'
+ je .proximo
+ cmp dl,'b'
+ je .proximo
  cmp dl,'E'
  jne .grade
  test dword [chaves],2
@@ -634,18 +722,7 @@ perseguir:
  mov ebx,eax
  jmp .caminho
 .avancar:
- mov [pos_guarda],ebx
- cmp ebx,[homem]
- je .pegou
- cmp ebx,[mulher]
- jne .fim
-.pegou:
- mov eax,1
- cmp ebx,[homem]
- je .derrota
- mov eax,2
-.derrota:
- jmp encerrar_derrota
+ mov [destino_guarda],ebx
 .fim:
  ret
 
@@ -787,8 +864,9 @@ desenhar:
  lea edi,[pixels+edi*4]
  mov ebx,[indice]
  mov esi,vigia
- cmp ebx,[pos_guarda]
+ cmp ebx,[destino_guarda]
  je .guarda
+.jogadores:
  mov esi,pilantra
  cmp ebx,[homem]
  je .homem
@@ -797,10 +875,12 @@ desenhar:
  je .mulher
  jmp .proxima
 .guarda:
+ push edi
  mov eax,[origem_guarda]
- call interpolar_posicao
+ call interpolar_guarda
  call desenhar_ator
- jmp .proxima
+ pop edi
+ jmp .jogadores
 .homem:
  mov edx,animacao_homem
  mov eax,[origem_homem]
@@ -1176,7 +1256,13 @@ selecionar_quadro:
  mov eax,QUADROS_PASSO
  sub eax,[quadros_restantes]
  imul eax,3
- shr eax,3
+ push ecx
+ push edx
+ mov ecx,QUADROS_PASSO
+ xor edx,edx
+ div ecx
+ pop edx
+ pop ecx
  add eax,[edx+4]
  cmp eax,6
  jb .fase
@@ -1190,23 +1276,55 @@ selecionar_quadro:
  pop eax
  ret
 
-; EDI = pixel da casa destino, EAX = origem, EBX = indice destino.
-; Um quadro aproxima a imagem em dois pixels, preservando a matriz logica.
+; Interpola a mesma distancia de 16 pixels com tempos independentes.
+; EDI = pixel destino, EAX = indice origem, EBX = indice destino.
 interpolar_posicao:
+ push ecx
+ push edx
+ mov ecx,QUADROS_PASSO
+ mov edx,[quadros_restantes]
+ call interpolar_casa
+ pop edx
+ pop ecx
+ ret
+
+interpolar_guarda:
+ push ecx
+ push edx
+ mov ecx,QUADROS_GUARDA
+ mov edx,[quadros_guarda]
+ call interpolar_casa
+ pop edx
+ pop ecx
+ ret
+
+; ECX = duracao total, EDX = quadros restantes. Divide antes da largura da tela.
+interpolar_casa:
  push eax
+ push ebx
+ push edx
  sub eax,ebx
+ mov ebx,1
  cmp eax,COLS
  jne .cima
- mov eax,WIDTH
+ mov eax,1
+ mov ebx,WIDTH
  jmp .aplicar
 .cima:
  cmp eax,-COLS
  jne .aplicar
- mov eax,-WIDTH
+ mov eax,-1
+ mov ebx,WIDTH
 .aplicar:
- imul eax,[quadros_restantes]
- shl eax,3
+ imul eax,edx
+ shl eax,4
+ cdq
+ idiv ecx
+ imul eax,ebx
+ shl eax,2
  add edi,eax
+ pop edx
+ pop ebx
  pop eax
  ret
 
