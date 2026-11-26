@@ -39,7 +39,9 @@ homem dd LEFT_START         ; Pilantra
 mulher dd RIGHT_START       ; Patife
 chaves dd 0                 ; bit 0 = A, bit 1 = B
 presos dd 0                 ; bit 0 = homem algemado, bit 1 = mulher algemada
+diamante_coletado dd 0
 estado dd 0                 ; 0 jogando, 1 pausa, 2 vitoria, 3 capturados
+motivo_derrota dd 0         ; 1/2 guarda pegou homem/mulher; 3 ambos presos; 4 porta
 pos_guarda dd GUARDA_INICIO
 turnos dd 0
 origem_homem dd LEFT_START
@@ -220,7 +222,9 @@ reiniciar:
  mov dword [mulher],RIGHT_START
  mov dword [chaves],0
  mov dword [presos],0
+ mov dword [diamante_coletado],0
  mov dword [estado],0
+ mov dword [motivo_derrota],0
  mov dword [origem_homem],LEFT_START
  mov dword [origem_mulher],RIGHT_START
  mov dword [origem_guarda],GUARDA_INICIO
@@ -357,10 +361,9 @@ executar_passo:
  jne .fim
  inc dword [turnos]
  cmp dword [turnos],RITMO_GUARDA
- jb verificar_vitoria
+ jb .fim
  mov dword [turnos],0
  call perseguir
- jmp verificar_vitoria
 .fim:
  ret
 
@@ -392,7 +395,7 @@ tentar_passo:
 .entrar:
  mov [esi],eax
  cmp eax,[pos_guarda]
- je .captura
+ je .guarda
  cmp cl,'T'
  jne .fim
  ; Entrar na algema ocupada pelo parceiro preso e um resgate.
@@ -415,8 +418,32 @@ tentar_passo:
 .prender:
  or [presos],ebx
  cmp dword [presos],3
+ je .ambos_presos
+ ; Patife presa com B desligada tambem encerra a tentativa.
+ test dword [presos],2
+ jz .fim
+ test dword [chaves],2
+ jnz .fim
+ mov eax,4
+ jmp encerrar_derrota
+.ambos_presos:
+ mov eax,3
+ jmp encerrar_derrota
+.guarda:
+ mov eax,1
+ cmp esi,homem
+ je .derrota
+ mov eax,2
+.derrota:
+ jmp encerrar_derrota
+.fim:
+ ret
+
+; Registra a primeira causa; a caixa e desenhada dentro do jogo.
+encerrar_derrota:
+ cmp dword [estado],0
  jne .fim
-.captura:
+ mov [motivo_derrota],eax
  mov dword [estado],3
 .fim:
  ret
@@ -427,7 +454,8 @@ interagir:
  call acionar_alavanca
  mov eax,[mulher]
  call acionar_alavanca
- jmp verificar_vitoria
+ call coletar_diamante
+ jmp verificar_fuga
 
 ; Qualquer um dos dois personagens pode acionar A ou B.
 ; EAX = posicao do personagem no mapa.
@@ -469,17 +497,81 @@ resgatar:
  mov dword [presos],0
  ret
 
-verificar_vitoria:
+; A joia so e recolhida por Espaco, um personagem em cada lateral, em qualquer ordem.
+coletar_diamante:
  cmp dword [estado],0
+ jne .fim
+ cmp dword [presos],0
+ jne .fim
+ cmp dword [diamante_coletado],0
  jne .fim
  cmp dword [chaves],3
  jne .fim
- cmp dword [homem],COLS+8
+ call dupla_ao_lado_diamante
+ test eax,eax
+ jz .fim
+ mov dword [diamante_coletado],1
+.fim:
+ ret
+
+dupla_ao_lado_diamante:
+ mov eax,[homem]
+ mov edx,[mulher]
+ cmp eax,COLS+8
+ je .pilantra_esquerda
+ cmp eax,COLS+10
+ jne .nao
+ cmp edx,COLS+8
+ je .sim
+ jmp .nao
+.pilantra_esquerda:
+ cmp edx,COLS+10
+ jne .nao
+.sim:
+ mov eax,1
+ ret
+.nao:
+ xor eax,eax
+ ret
+
+; A fuga tambem exige Espaco: ambos livres, na porta aberta ou ao lado dela.
+verificar_fuga:
+ cmp dword [estado],0
  jne .fim
- cmp dword [mulher],COLS+10
+ cmp dword [diamante_coletado],1
  jne .fim
+ cmp dword [presos],0
+ jne .fim
+ test dword [chaves],2
+ jz .fim
+ mov eax,[homem]
+ call perto_da_porta
+ test eax,eax
+ jz .fim
+ mov eax,[mulher]
+ call perto_da_porta
+ test eax,eax
+ jz .fim
  mov dword [estado],2
 .fim:
+ ret
+
+perto_da_porta:
+ sub eax,13*COLS+9
+ cmp eax,0
+ je .perto
+ cmp eax,1
+ je .perto
+ cmp eax,-1
+ je .perto
+ cmp eax,COLS
+ je .perto
+ cmp eax,-COLS
+ je .perto
+ xor eax,eax
+ ret
+.perto:
+ mov eax,1
  ret
 
 ; Busca em largura: cada casa entra uma vez na fila. O primeiro ladrao
@@ -548,7 +640,12 @@ perseguir:
  cmp ebx,[mulher]
  jne .fim
 .pegou:
- mov dword [estado],3
+ mov eax,1
+ cmp ebx,[homem]
+ je .derrota
+ mov eax,2
+.derrota:
+ jmp encerrar_derrota
 .fim:
  ret
 
@@ -638,6 +735,9 @@ desenhar:
  jmp .bloco_bgra
 .diamante:
  mov esi,diamante_pedra
+ cmp dword [diamante_coletado],0
+ je .bloco_bgra
+ mov esi,pedra_diamante
  jmp .bloco_bgra
 .algema:
  mov esi,algema_esquerda
@@ -731,6 +831,20 @@ desenhar:
  inc dword [indice]
  cmp dword [indice],ROWS*COLS
  jb .pessoas
+ cmp dword [estado],1
+ jne .derrota
+ call desenhar_caixa_pausa
+ jmp .imagem_pronta
+.derrota:
+ cmp dword [estado],3
+ jne .vitoria
+ call desenhar_caixa_game_over
+ jmp .imagem_pronta
+.vitoria:
+ cmp dword [estado],2
+ jne .imagem_pronta
+ call desenhar_caixa_vitoria
+.imagem_pronta:
  ; Amplia os pixels aqui para evitar o travamento de StretchDIBits no Wine.
  mov esi,pixels
  mov edi,pixels_tela
@@ -766,11 +880,20 @@ desenhar:
  shr eax,1
  add al,'0'
  mov [marcaB],al
+ mov eax,[diamante_coletado]
+ add al,'0'
+ mov [marcaD],al
  mov eax,460
  mov edx,7
  call escrever
  mov eax,[estado]
  mov esi,[avisos+eax*4]
+ cmp eax,3
+ jne .aviso_preso
+ mov eax,[motivo_derrota]
+ mov esi,[avisos_derrota+eax*4]
+ jmp .aviso
+.aviso_preso:
  test eax,eax
  jnz .aviso
  cmp dword [presos],1
@@ -779,12 +902,217 @@ desenhar:
  jmp .aviso
 .aviso_mulher:
  cmp dword [presos],2
- jne .aviso
+ jne .objetivo
  mov esi,mulher_presa
+ jmp .aviso
+.objetivo:
+ cmp dword [diamante_coletado],1
+ jne .coleta
+ mov esi,ajuda_fuga
+ jmp .aviso
+.coleta:
+ cmp dword [chaves],3
+ jne .aviso
+ call dupla_ao_lado_diamante
+ test eax,eax
+ jz .aviso
+ mov esi,ajuda_coleta
 .aviso:
  mov eax,8
  mov edx,519
  call escrever
+ ret
+
+desenhar_fundo_caixa:
+ pushad
+ ; Escurece o mapa, preservando-o visivel atras do painel.
+ mov edi,pixels
+ mov ecx,WIDTH*HEIGHT
+.escurecer:
+ mov eax,[edi]
+ and eax,0x00fefefe
+ shr eax,1
+ stosd
+ loop .escurecer
+ mov edi,pixels
+ bloco 16,83,276,116,0x070e19
+ bloco 14,80,276,116,0x945465
+ bloco 16,81,272,1,0xcd8797
+ bloco 16,83,272,111,0x0c1828
+ bloco 34,144,236,34,0x2d4566
+ bloco 34,144,236,1,0x3a567b
+ popad
+ ret
+
+desenhar_caixa_game_over:
+ pushad
+ call desenhar_fundo_caixa
+ mov ebx,0xdce6f2
+ mov esi,titulo_game_over
+ mov edx,94
+ mov ecx,2
+ call texto_centralizado
+ mov eax,[motivo_derrota]
+ mov esi,[causas_game_over+eax*4]
+ mov edx,122
+ mov ecx,1
+ call texto_centralizado
+ mov esi,game_over_reiniciar
+ mov edx,151
+ call texto_centralizado
+ mov esi,game_over_novamente
+ mov edx,165
+ call texto_centralizado
+ popad
+ ret
+
+desenhar_caixa_vitoria:
+ pushad
+ call desenhar_fundo_caixa
+ mov ebx,0xdce6f2
+ mov esi,titulo_fase_concluida
+ mov edx,94
+ mov ecx,2
+ call texto_centralizado
+ mov esi,vitoria_fuga_linha1
+ mov edx,118
+ mov ecx,1
+ call texto_pequeno_centralizado
+ mov esi,vitoria_fuga_linha2
+ mov edx,130
+ call texto_pequeno_centralizado
+ mov esi,vitoria_proxima_linha1
+ mov edx,151
+ call texto_pequeno_centralizado
+ mov esi,vitoria_proxima_linha2
+ mov edx,165
+ call texto_pequeno_centralizado
+ popad
+ ret
+
+desenhar_caixa_pausa:
+ pushad
+ call desenhar_fundo_caixa
+ mov ebx,0xdce6f2
+ mov esi,titulo_pausa
+ mov edx,94
+ mov ecx,2
+ call texto_centralizado
+ mov esi,pausa_descricao
+ mov edx,122
+ mov ecx,1
+ call texto_centralizado
+ mov esi,pausa_continuar
+ mov edx,151
+ call texto_centralizado
+ mov esi,pausa_reiniciar
+ mov edx,165
+ call texto_centralizado
+ popad
+ ret
+
+; Fontes incorporadas: ESI texto, EDX linha, ECX escala, EBX cor RGB.
+texto_centralizado:
+ push ebp
+ mov ebp,config_fonte_normal
+ call texto_fonte_centralizada
+ pop ebp
+ ret
+
+texto_pequeno_centralizado:
+ push ebp
+ mov ebp,config_fonte_pequena
+ call texto_fonte_centralizada
+ pop ebp
+ ret
+
+texto_fonte_centralizada:
+ pushad
+ xor eax,eax
+.contar:
+ cmp byte [esi+eax],0
+ je .posicionar
+ inc eax
+ jmp .contar
+.posicionar:
+ imul eax,[ebp+12]
+ imul eax,ecx
+ neg eax
+ add eax,WIDTH
+ sar eax,1
+ call texto_pixel
+ popad
+ ret
+
+; EAX coluna, EDX linha, ECX escala, EBX cor, EBP configuracao da fonte.
+texto_pixel:
+ pushad
+ sub esp,40
+ mov [esp],ebx
+ mov [esp+4],ecx
+ imul edx,WIDTH
+ add edx,eax
+ lea edi,[pixels+edx*4]
+ mov eax,[ebp]
+ mov [esp+20],eax
+ mov eax,[ebp+4]
+ mov [esp+24],eax
+ mov eax,[ebp+8]
+ mov [esp+28],eax
+ mov eax,[ebp+12]
+ mov [esp+32],eax
+ mov eax,[ebp+16]
+ mov [esp+36],eax
+.caractere:
+ lodsb
+ movzx eax,al
+ test eax,eax
+ jz .fim
+ mov [esp+16],edi
+ sub eax,32
+ cmp eax,58
+ ja .seguinte
+ imul eax,[esp+28]
+ add eax,[esp+20]
+ mov ebp,eax
+ mov eax,[esp+28]
+ mov [esp+8],eax
+.linha:
+ movzx eax,byte [ebp]
+ inc ebp
+ mov [esp+12],eax
+ mov ebx,[esp+24]
+.pixel:
+ mov eax,[esp+36]
+ test [esp+12],eax
+ jz .transparente
+ mov eax,[esp]
+ mov ecx,[esp+4]
+ mov edx,ecx
+ call retangulo
+.transparente:
+ shl dword [esp+12],1
+ mov eax,[esp+4]
+ lea edi,[edi+eax*4]
+ dec ebx
+ jnz .pixel
+ mov eax,WIDTH
+ sub eax,[esp+24]
+ imul eax,[esp+4]
+ shl eax,2
+ add edi,eax
+ dec dword [esp+8]
+ jnz .linha
+.seguinte:
+ mov edi,[esp+16]
+ mov eax,[esp+32]
+ imul eax,[esp+4]
+ shl eax,2
+ add edi,eax
+ jmp .caractere
+.fim:
+ add esp,40
+ popad
  ret
 
 ; ESI aponta para 8 linhas de 8 indices de cor. Zero = transparente.
@@ -918,14 +1246,45 @@ align 4096,db 0
 cabecalho db '01  PATIFE E PILANTRA   |   DUPLA DO DIAMANTE',0
 statusA db 'A:'
 marcaA db '0','  B:'
-marcaB db '0',0
+marcaB db '0',' D:'
+marcaD db '0',0
 avisos dd ajuda,pausa,vitoria,derrota
 ajuda db 'WASD/Setas: mover   Espaco: alavanca/resgate   P: pausa   R: reiniciar',0
+ajuda_coleta db 'Aperte Espaco para pegar o diamante. Depois voltem a porta azul.',0
+ajuda_fuga db 'DIAMANTE COLETADO! Levem os dois a porta azul e apertem Espaco.',0
 homem_preso db 'PILANTRA PRESO! Aproxime a Patife e aperte Espaco para soltar.',0
 mulher_presa db 'PATIFE PRESA! Aproxime o Pilantra e aperte Espaco para soltar.',0
 pausa db 'PAUSA   |   Pressione P para continuar.',0
-vitoria db 'DIAMANTE ROUBADO!   |   R para jogar novamente.',0
-derrota db 'DUPLA CAPTURADA!   |   R para tentar novamente.',0
+vitoria db 'FASE CONCLUIDA! Pressione Enter para a proxima fase.',0
+derrota db 'GAME OVER! R para tentar novamente.',0
+derrota_homem db 'GAME OVER: o guarda capturou o Pilantra. R para reiniciar.',0
+derrota_mulher db 'GAME OVER: o guarda capturou a Patife. R para reiniciar.',0
+derrota_algemas db 'GAME OVER: os dois ficaram presos nas algemas. R para reiniciar.',0
+derrota_porta db 'GAME OVER: Patife presa e porta azul fechada. R para reiniciar.',0
+avisos_derrota dd derrota,derrota_homem,derrota_mulher,derrota_algemas,derrota_porta
+titulo_game_over db 'GAME OVER',0
+titulo_fase_concluida db 'FASE CONCLUIDA',0
+titulo_pausa db 'JOGO PAUSADO',0
+pausa_descricao db 'A PARTIDA ESTA PAUSADA',0
+pausa_continuar db 'APERTE P PARA CONTINUAR',0
+pausa_reiniciar db 'R PARA REINICIAR A FASE',0
+vitoria_fuga_linha1 db 'OS LADROES CONSEGUIRAM FUGIR',0
+vitoria_fuga_linha2 db 'DA CADEIA COM O DIAMANTE',0
+vitoria_proxima_linha1 db 'PRESSIONE ENTER PARA IR',0
+vitoria_proxima_linha2 db 'PARA A PROXIMA FASE',0
+causas_game_over dd causa_generica,causa_homem,causa_mulher,causa_algemas,causa_porta
+causa_generica db 'A TENTATIVA TERMINOU',0
+causa_homem db 'O GUARDA CAPTUROU O PILANTRA',0
+causa_mulher db 'O GUARDA CAPTUROU A PATIFE',0
+causa_algemas db 'OS DOIS FICARAM PRESOS NAS ALGEMAS',0
+causa_porta db 'PATIFE PRESA E PORTA AZUL FECHADA',0
+game_over_reiniciar db 'APERTE R PARA REINICIAR',0
+game_over_novamente db 'E JOGAR NOVAMENTE',0
+fonte_pixel: incbin "assets/fonte5x7.bin"
+fonte_pequena: incbin "assets/fonte4x6.bin"
+align 4
+config_fonte_normal dd fonte_pixel,5,7,6,16
+config_fonte_pequena dd fonte_pequena,4,6,5,8
 paleta dd 0,0x111526,0xe2eff9,0xeab685,0x96533c,0xf1bc59,0x398fd8,0x55e3e6,0xaa6488,0x748699
 figuras:
  db 'a'
@@ -941,6 +1300,7 @@ patife: incbin "assets/patife_animacoes.bgra"
 parede: incbin "assets/parede.bgra"
 parede_central: incbin "assets/parede_central.bgra"
 diamante_pedra: incbin "assets/diamante_pedra.bgra"
+pedra_diamante: incbin "assets/pedra_diamante.bgra"
 algema_esquerda: incbin "assets/algema_esquerda.bgra"
 algema_direita: incbin "assets/algema_direita.bgra"
 grade_esquerda: incbin "assets/grade_esquerda.bgra"
