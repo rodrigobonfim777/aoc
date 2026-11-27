@@ -12,3 +12,8 @@ bits 32
 %include "guardas.inc"
 %include "interacao.inc"
 %include "avisos.inc"
+
+section .rdata align=4
+global _musica_pcm, _musica_bytes
+_musica_pcm: incbin "assets/audioAoc.s16le"
+_musica_bytes: dd $ - _musica_pcm

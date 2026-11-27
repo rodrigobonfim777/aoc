@@ -1,4 +1,6 @@
 ; Dados mutáveis da partida. As regras consultam e alteram estes valores.
+global _jogo_tentativa, _jogo_estado
+_jogo_tentativa dd 0
 fase dd 0                  ; 0 cadeia, 1 museu, 2 praia, 3 bônus
 tamanho_mapa dd 0
 pos_porta dd 0
@@ -12,6 +14,7 @@ presos dd 0                 ; bit 0 = homem algemado, bit 1 = mulher algemada
 diamante_coletado dd 0
 diamantes_bonus dd 0
 aviso_coleta dd 0
+_jogo_estado:
 estado dd 0                 ; 0 jogando, 1 pausa, 2 vitória, 3 derrota, 4 menu
 motivo_derrota dd 0         ; 1/2 guarda pegou homem/mulher; 3 dupla presa; 4/5 Patife/Pilantra sem resgate
 ; A rotina de patrulha recebe em EBP o endereco de um destes blocos.

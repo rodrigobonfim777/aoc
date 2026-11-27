@@ -34,6 +34,7 @@ escolher_fase:
 
 ; Copia o mapa original da fase para desfazer mudanças como algemas removidas.
 reiniciar:
+ inc dword [_jogo_tentativa]
  push esi
  push edi
  push ecx

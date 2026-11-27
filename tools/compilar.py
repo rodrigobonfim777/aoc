@@ -24,7 +24,7 @@ def compilar():
     if not nasm or not cpp:
         parser.error('Coloque NASM e MinGW no PATH.')
     alvo = subprocess.check_output([cpp, '-dumpmachine'], text=True).strip()
-    if not re.fullmatch(r'mingw32|i[3-6]86-.*mingw32', alvo):
+    if not re.fullmatch(r'mingw32|i[3-6]86-.*(?:mingw32|windows-gnu)', alvo):
         parser.error('Use MinGW de 32 bits, por exemplo --compilador i686-w64-mingw32-g++.')
 
     with TemporaryDirectory(prefix='aoc-compilar-') as temp:
@@ -39,7 +39,7 @@ def compilar():
         subprocess.run([cpp, '-std=c++11', '-O2', '-Wall', '-Wextra', '-Wpedantic',
                         '-mwindows', '-static', '-Wl,--no-insert-timestamp',
                         '-I', temp, 'codigo_do_jogo/visual/visual.cpp', 'codigo_do_jogo/visual/cena.cpp', str(arte),
-                        str(objeto), '-lgdi32', '-o', str(exe)],
+                        str(objeto), '-lgdi32', '-lwinmm', '-o', str(exe)],
                        cwd=ROOT, check=True)
         shutil.copyfile(exe, args.saida)
     print(f'Compilado em: {args.saida}')

@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <mmsystem.h>
 #include "cena.hpp"
 #include <cstring>
 
@@ -9,6 +10,10 @@ void jogo_tecla(unsigned tecla);
 void jogo_soltar(unsigned tecla);
 int jogo_tick();
 int jogo_clicar(unsigned coordenadas);
+extern const char musica_pcm[];
+extern const DWORD musica_bytes;
+extern int jogo_estado;
+extern unsigned jogo_tentativa;
 }
 
 namespace {
@@ -16,6 +21,53 @@ namespace {
 constexpr UINT_PTR timerJogo = 1;
 constexpr char classe[] = "PatifePilantraAOC";
 constexpr char titulo[] = "Patife e Pilantra";
+
+HWAVEOUT dispositivo{};
+WAVEHDR faixa{};
+
+void abrirMusica() {
+    // PCM estéreo de 48 kHz e 16 bits, incorporado pelo NASM.
+    WAVEFORMATEX formato{WAVE_FORMAT_PCM, 2, 48000, 192000, 4, 16, 0};
+    if (waveOutOpen(&dispositivo, WAVE_MAPPER, &formato, 0, 0, CALLBACK_NULL)
+        != MMSYSERR_NOERROR) return;
+    faixa.lpData = const_cast<char*>(musica_pcm);
+    faixa.dwBufferLength = musica_bytes;
+    faixa.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
+    faixa.dwLoops = MAXDWORD;
+    if (waveOutPrepareHeader(dispositivo, &faixa, sizeof(faixa)) != MMSYSERR_NOERROR) {
+        waveOutClose(dispositivo);
+        dispositivo = nullptr;
+    }
+}
+
+void sincronizarMusica() {
+    static int estadoAnterior = -1;
+    static unsigned tentativaAnterior = 0;
+    if (!dispositivo) return;
+    const bool novaTentativa = tentativaAnterior != jogo_tentativa;
+    if (!novaTentativa && estadoAnterior == jogo_estado) return;
+    if (jogo_estado == 0) {
+        if (novaTentativa || estadoAnterior != 1) {
+            waveOutReset(dispositivo);
+            waveOutWrite(dispositivo, &faixa, sizeof(faixa));
+        }
+        waveOutRestart(dispositivo);
+    } else if (jogo_estado == 1) {
+        waveOutPause(dispositivo);
+    } else {
+        waveOutReset(dispositivo);
+    }
+    estadoAnterior = jogo_estado;
+    tentativaAnterior = jogo_tentativa;
+}
+
+void fecharMusica() {
+    if (!dispositivo) return;
+    waveOutReset(dispositivo);
+    waveOutUnprepareHeader(dispositivo, &faixa, sizeof(faixa));
+    waveOutClose(dispositivo);
+    dispositivo = nullptr;
+}
 
 void texto(HDC dc, int x, int y, const char* valor) {
     TextOutA(dc, x, y, valor, static_cast<int>(std::strlen(valor)));
@@ -61,6 +113,7 @@ LRESULT CALLBACK procedimento(HWND janela, UINT mensagem, WPARAM tecla, LPARAM d
         // O motor controla teclas seguradas; ignora a repetição do Windows.
         if (!(dados & (1L << 30))) {
             jogo_tecla(static_cast<unsigned>(tecla));
+            sincronizarMusica();
             InvalidateRect(janela, nullptr, FALSE);
         }
         return 0;
@@ -70,6 +123,7 @@ LRESULT CALLBACK procedimento(HWND janela, UINT mensagem, WPARAM tecla, LPARAM d
     case WM_LBUTTONDOWN:
         // O Assembly valida a fase e a área clicada antes de trocar de mapa.
         if (jogo_clicar(static_cast<unsigned>(dados))) {
+            sincronizarMusica();
             InvalidateRect(janela, nullptr, FALSE);
             return 0;
         }
@@ -78,6 +132,7 @@ LRESULT CALLBACK procedimento(HWND janela, UINT mensagem, WPARAM tecla, LPARAM d
         if (tecla == timerJogo) {
             // O relógio é da janela. A lógica do tick continua em Assembly.
             if (jogo_tick()) InvalidateRect(janela, nullptr, FALSE);
+            sincronizarMusica();
             return 0;
         }
         break;
@@ -89,6 +144,7 @@ LRESULT CALLBACK procedimento(HWND janela, UINT mensagem, WPARAM tecla, LPARAM d
         return 0;
     }
     case WM_DESTROY:
+        fecharMusica();
         KillTimer(janela, timerJogo);
         PostQuitMessage(0);
         return 0;
@@ -115,6 +171,8 @@ int WINAPI WinMain(HINSTANCE instancia, HINSTANCE, LPSTR, int exibir) {
         CW_USEDEFAULT, CW_USEDEFAULT, area.right - area.left, area.bottom - area.top,
         nullptr, nullptr, instancia, nullptr);
     if (!janela) return 1;
+    abrirMusica();
+    sincronizarMusica();
     ShowWindow(janela, exibir);
     if (!SetTimer(janela, timerJogo, jogo_intervalo, nullptr)) {
         DestroyWindow(janela);
