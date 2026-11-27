@@ -69,8 +69,11 @@ place_sprite("concha_espiral", (222, 142, 1042, 738), (142, 937), (77, 58))
 place_sprite("concha_leque", (304, 146, 963, 701), (1238, 932), (75, 65))
 
 atlas = bytearray()
-for y0, y1 in zip(rows, rows[1:]):
-    for x0, x1 in zip(columns, columns[1:]):
-        tile = scene.crop((x0, y0, x1, y1)).resize((32, 32), Image.Resampling.LANCZOS)
-        atlas.extend(tile.convert("RGBA").tobytes("raw", "BGRA"))
+preview = Image.new("RGBA", (32 * (len(columns) - 1), 32 * (len(rows) - 1)))
+for row, (y0, y1) in enumerate(zip(rows, rows[1:])):
+    for col, (x0, x1) in enumerate(zip(columns, columns[1:])):
+        tile = scene.crop((x0, y0, x1, y1)).resize((32, 32), Image.Resampling.LANCZOS).convert("RGBA")
+        preview.paste(tile, (col * 32, row * 32))
+        atlas.extend(tile.tobytes("raw", "BGRA"))
 (assets / "cenario_praia.bgra").write_bytes(atlas)
+preview.save(assets / "cenario_praia.png")
