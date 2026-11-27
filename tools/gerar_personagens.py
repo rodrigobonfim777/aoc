@@ -55,14 +55,22 @@ def read_sheet(filename, rows, columns):
     ]
 
 
-def normalize_rows(rows):
-    # A mesma escala nos quadros evita que o personagem cresca ao se mover.
+def normalize_rows(rows, match_guard_height=False):
+    # As poses de algema mantêm a escala comum, inclusive quando o ator se abaixa.
     scale = min(SIZE / max(frame.width for row in rows for frame in row),
                 SIZE / max(frame.height for row in rows for frame in row))
     for row in rows:
         for frame in row:
-            width = max(1, round(frame.width * scale))
-            height = max(1, round(frame.height * scale))
+            if match_guard_height:
+                # A altura visível do policial é de 32 pixels em todos os quadros.
+                # Mede a silhueta opaca para não contar resíduos transparentes.
+                alpha = frame.getchannel('A').point(lambda v: 255 if v >= 128 else 0)
+                frame = frame.crop(alpha.getbbox())
+                frame_scale = min(SIZE / frame.width, SIZE / frame.height)
+            else:
+                frame_scale = scale
+            width = max(1, round(frame.width * frame_scale))
+            height = max(1, round(frame.height * frame_scale))
             sprite = frame.resize((width, height), Image.Resampling.BOX)
             alpha = sprite.getchannel('A').point(lambda v: 255 if v >= 128 else 0)
             sprite.putalpha(alpha)
@@ -78,7 +86,8 @@ def main():
         # Ordem do jogo: direita, esquerda, costas, frente, queda, preso.
         directions = [walking[index] for index in (3, 2, 0, 1)]
         trap_rows = [trapped[1], trapped[0]]
-        frames = list(normalize_rows(directions)) + list(normalize_rows(trap_rows))
+        frames = list(normalize_rows(directions, match_guard_height=True))
+        frames += list(normalize_rows(trap_rows))
         atlas = Image.new('RGBA', (4 * SIZE, 6 * SIZE))
         for index, frame in enumerate(frames):
             atlas.paste(frame, ((index % 4) * SIZE, (index // 4) * SIZE))
